@@ -1,0 +1,22 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Dane. Katalog data/ wazy 2,3 GB - nie trafia do repozytorium.
+# Tozsamosc plikow wejsciowych jest zapisywana jako SHA-256 w manifescie (P18),
+# wiec reprodukowalnosc (W6) nie cierpi na tym, ze samych plikow tu nie ma.
+data/raw/**
+!data/raw/**/
+data/processed/*.parquet
+data/processed/*.csv
+
+# ...ale puste katalogi-znaczniki i manifest zostaja w historii.
+!data/**/.gitkeep
+!data/processed/manifest.json
