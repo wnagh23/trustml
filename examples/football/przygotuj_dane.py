@@ -150,6 +150,55 @@ KODY_EUROPA = frozenset({
 })
 
 
+# ETAP 4-5: agregacja do sezonu, normalizacja predyktorow per 90 minut i wskazniki procentowe
+
+# Klucz zbioru docelowego
+
+KLUCZ_SEZON = ["player_id", "season"]
+
+# Minimalny prog minut w sezonie
+
+MIN_MINUT = 225
+
+
+# Wskazniki procentowe
+
+# NAJWAZNIEJSZA REGULA AGREGACJI - procentow NIGDY nie usredniamy z poziomu
+# meczu. Agregujemy liczniki i mianowniki osobno, a wskaznik liczymy dopiero
+# na poziomie sezonu jako suma_licznikow / suma_mianownikow.
+
+WSKAZNIKI_PROCENTOWE = {
+    # celnosc podan - ogolem i w podziale na dystans
+    "completion_percentage":       ("total_completed", ["total_attempted"]),
+    "short_completion_percentage": ("short_completed", ["short_attempted"]),
+    "med_completion_percentage":   ("med_completed",   ["med_attempted"]),
+    "long_completion_percentage":  ("long_completed",  ["long_attempted"]),
+    # dryblingi zawodnika: udane oraz zatrzymane przez rywala
+    "dribble_success_percentage":  ("successful_dribbles", ["dribbles_attempted"]),
+    "tackled_perecentage":         ("tackled",             ["dribbles_attempted"]),
+    # skutecznosc w odbieraniu pilki dryblujacemu rywalowi
+    "successful_dribbler_tackle_percentage": (
+        "dribblers_tackled", ["attempted_tackles_vs_dribblers"]
+    ),
+    # pojedynki powietrzne
+    "aerials_won_percentage":      ("aerials_won", ["aerials_won", "aerials_lost"]),
+}
+
+
+KOLUMNY_NIELICZNIKOWE = [
+    # klucze i identyfikatory
+    "match_id", "player_id", "season", "competition", "date",
+    # pola opisujace pojedynczy mecz
+    "home_away", "squad_number", "start",
+    # pola tekstowe przetworzone
+    "nation", "position", "age",
+    # cechy stale zawodnika
+    "name", "data_urodzenia", "wiek", "kod_kraju", "region",
+    # obslugiwane osobno
+    "minutes", "pozycja_mecz",
+]
+
+
 
 # ETAP 1  wczytanie i deduplikacja tabel z master.db
 
@@ -210,7 +259,7 @@ def usun_redundancje(tabele: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]
             print(f"  {nazwa:20s} zmiana nazwy: {stara} -> {nowa}")
 
     # Sprawdzenie czy na pewno nie zostala zadna kolizja nazw
-    # Budujemy slownik {nazwa_kolumny: [tabele, w ktorych wystepuje]} i wymuszamy,
+    # budujemy slownik {nazwa_kolumny: [tabele, w ktorych wystepuje]} wymuszamy,
     # zeby kazda lista miala dlugosc 1.
 
     gdzie_wystepuje: dict[str, list[str]] = {}
@@ -604,7 +653,173 @@ def etap_3_parsuj(wystepy: pd.DataFrame) -> pd.DataFrame:
     return wystepy
 
 
+# ETAP 4  agregacja mecz do zawodnik x sezon
+
+
+def wybierz_wg_sumy_minut(wystepy: pd.DataFrame, kolumna: str) -> pd.Series:
+    """
+    Dla kazdej pary zawodnik-sezon wybiera te wartosc kolumny, przy ktorej
+    zawodnik spedzil na boisku najwiecej MINUT (nie: najwiecej meczow).
+
+    Sluzy do dwoch rzeczy: ustalenia pozycji sezonowej i ligi sezonowej.
+
+    Przyjmuje:
+        wystepy - tabela na poziomie meczu, z kolumna "minutes"
+        kolumna - co wybieramy, np. "pozycja_mecz" albo "competition"
+
+    Zwraca:
+        Series indeksowana (player_id, season), jedna wartosc na pare.
+
+    """
+    # Sumujemy minuty w rozbiciu na wartosci kolumny - dostajemy dla kazdej pary
+    # tyle wierszy, ile roznych wartosci wystapilo.
+    minuty = (
+        wystepy.groupby(KLUCZ_SEZON + [kolumna])["minutes"].sum().reset_index()
+    )
+
+    minuty = minuty.sort_values(
+        KLUCZ_SEZON + ["minutes", kolumna], ascending=[True, True, False, True]
+    )
+    najlepsze = minuty.drop_duplicates(subset=KLUCZ_SEZON, keep="first")
+    return najlepsze.set_index(KLUCZ_SEZON)[kolumna]
+
+
+def etap_4_agreguj(wystepy: pd.DataFrame) -> pd.DataFrame:
+    """
+    ETAP 4: sprowadza dane z poziomu pojedynczego meczu na poziom calego sezonu.
+
+
+    Przyjmuje:
+        wystepy
+
+    Zwraca:
+        DataFrame o unikalnym kluczu (player_id, season), z surowymi SUMAMI
+        sezonowymi. Przeliczenie na 90 minut i wskazniki procentowe robi ETAP 5.
+
+    """
+    print("\n" + "=" * 70)
+    print("ETAP 4  agregacja mecz -> zawodnik x sezon")
+    print("=" * 70)
+
+    na_wejsciu = len(wystepy)
+
+    # 4a. Ktore kolumny sumujemy
+
+    licznikowe = [
+        c
+        for c in wystepy.columns
+        if c not in KOLUMNY_NIELICZNIKOWE and c not in WSKAZNIKI_PROCENTOWE
+    ]
+
+    for procent, (licznik, mianowniki) in WSKAZNIKI_PROCENTOWE.items():
+        for potrzebna in [licznik, *mianowniki]:
+            assert potrzebna in licznikowe, (
+                f"kolumna {potrzebna}, potrzebna do policzenia {procent}, "
+                f"nie trafila do sumowania"
+            )
+
+    print(f"\n  kolumn do zsumowania:        {len(licznikowe)}")
+    print(f"  kolumn procentowych odrzuconych: {len(WSKAZNIKI_PROCENTOWE)} "
+          f"(policzymy je w ETAPIE 5 z licznikow i mianownikow)")
+
+    
+    # 4b. Sumy statystyk
+    
+    sezony = wystepy.groupby(KLUCZ_SEZON, as_index=False)[licznikowe].sum()
+
+    # 4c. Minuty, mecze i sklad wyjsciowy
+
+    podsumowanie = wystepy.groupby(KLUCZ_SEZON, as_index=False).agg(
+        minuty_sezon=("minutes", "sum"),
+        mecze=("match_id", "size"),
+        mecze_od_poczatku=("start", "sum"),
+    )
+
+    # 4d. Cechy stale zawodnika
+    
+    stale = wystepy.groupby(KLUCZ_SEZON, as_index=False).agg(
+        name=("name", "first"),
+        data_urodzenia=("data_urodzenia", "first"),
+        wiek=("wiek", "first"),
+        kod_kraju=("kod_kraju", "first"),
+        region=("region", "first"),
+    )
+
+    
+    for kolumna in ["data_urodzenia", "wiek", "kod_kraju", "region"]:
+        ile_roznych = wystepy.groupby(KLUCZ_SEZON)[kolumna].nunique()
+        assert (ile_roznych <= 1).all(), (
+            f"{kolumna} nie jest stala w obrebie pary zawodnik-sezon"
+        )
+
+    # 4e. Pozycja i liga sezonowa
+
+    print("\n-- pozycja i liga sezonowa (wg sumy minut) --")
+    pozycja = wybierz_wg_sumy_minut(wystepy, "pozycja_mecz").rename("pozycja")
+    liga = wybierz_wg_sumy_minut(wystepy, "competition").rename("liga")
+
+    
+    ile_lig = wystepy.groupby(KLUCZ_SEZON)["competition"].nunique()
+    zmienil = (ile_lig > 1).rename("zmienil_lige")
+    print(f"  par grajacych w wiecej niz jednej lidze: {zmienil.sum()} "
+          f"({100 * zmienil.mean():.1f}%)")
+
+    # 4f. Zlozenie wszystkiego w jedna tabele
+    
+    sezony = sezony.merge(podsumowanie, on=KLUCZ_SEZON, validate="one_to_one")
+    sezony = sezony.merge(stale, on=KLUCZ_SEZON, validate="one_to_one")
+    for dodatkowa in [pozycja, liga, zmienil]:
+        sezony = sezony.merge(
+            dodatkowa.reset_index(), on=KLUCZ_SEZON, validate="one_to_one"
+        )
+
+    print(f"\n  par zawodnik-sezon po agregacji: {len(sezony)}")
+
+    # 4g. Prog minutowy
+
+    print(f"\n-- prog minutowy (MIN_MINUT = {MIN_MINUT}) --")
+    dosc_minut = sezony["minuty_sezon"] >= MIN_MINUT
+    print(f"  odrzucam {(~dosc_minut).sum()} par ponizej progu "
+          f"({100 * (~dosc_minut).mean():.1f}%)")
+    print(f"  powod: przy kilkunastu minutach statystyki per 90 sa czystym szumem "
+          f"- jedno podanie w 10 minut daje 9 podan na 90 minut")
+    sezony = sezony[dosc_minut]
+
+    # Sprawdzenia i kontrolka
+
+    assert not sezony.duplicated(subset=KLUCZ_SEZON).any(), (
+        "para (player_id, season) nie jest unikalna"
+    )
+    assert (sezony["minuty_sezon"] >= MIN_MINUT).all(), "zostala para ponizej progu"
+    assert sezony["pozycja"].isin(["DEF", "MID", "FOR"]).all(), "obca pozycja"
+
+    assert (sezony["mecze_od_poczatku"] <= sezony["mecze"]).all(), (
+        "wiecej wyjsc w pierwszym skladzie niz rozegranych meczow"
+    )
+    
+    assert (sezony["minuty_sezon"] <= 90 * sezony["mecze"]).all(), (
+        "suma minut przekracza 90 na mecz"
+    )
+
+    print("\n-- stan po ETAPIE 4 --")
+    print(f"  wystepow na wejsciu:  {na_wejsciu}")
+    print(f"  par zawodnik-sezon:   {len(sezony)}")
+    print(f"  zawodnikow:           {sezony['player_id'].nunique()}")
+    print(f"  kolumn:               {sezony.shape[1]}")
+    print(f"  minuty w sezonie:     mediana {sezony['minuty_sezon'].median():.0f}, "
+          f"od {sezony['minuty_sezon'].min():.0f} do {sezony['minuty_sezon'].max():.0f}")
+    print("\n  rozklad pozycji:")
+    for poz, ile in sezony["pozycja"].value_counts().items():
+        print(f"    {poz}  {ile:6d} ({100 * ile / len(sezony):5.1f}%)")
+    print("\n  par na sezon:")
+    for sezon, ile in sezony["season"].value_counts().sort_index().items():
+        print(f"    {sezon}  {ile:6d}")
+
+    return sezony
+
+
 if __name__ == "__main__":
     tabele = etap_1_wczytaj_i_zdeduplikuj(SCIEZKA_DB)
     wystepy = etap_2_polacz_tabele(tabele)
     wystepy = etap_3_parsuj(wystepy)
+    sezony = etap_4_agreguj(wystepy)
