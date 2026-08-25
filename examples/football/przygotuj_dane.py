@@ -165,7 +165,7 @@ MIN_MINUT = 225
 
 # Wskazniki procentowe
 
-# NAJWAZNIEJSZA REGULA AGREGACJI - procentow NIGDY nie usredniamy z poziomu
+# procentow nie usredniamy z poziomu
 # meczu. Agregujemy liczniki i mianowniki osobno, a wskaznik liczymy dopiero
 # na poziomie sezonu jako suma_licznikow / suma_mianownikow.
 
@@ -1006,48 +1006,46 @@ def zbuduj_crosswalk(sezony: pd.DataFrame, tm: pd.DataFrame) -> pd.DataFrame:
 
     Zaklada:
         ze nazwisko wystepujace po ktorejkolwiek stronie wiecej niz raz jest
-        bezuzyteczne jako klucz - i takie odrzucamy w CALOSCI, obie kopie.
-        Lepiej stracic wiersz niz przypisac zawodnikowi cudza wycene.
+        bezuzyteczne jako klucz samo w sobie. Zamiast od razu odrzucac takie
+        wiersze w calosci, dajemy im druga szanse w ETAPIE B: dopasowanie po
+        (nazwa, data urodzenia). To odzyskuje wlasnie te przypadki, ktore
+        ETAP 6 raportuje jako nielosowa strata - jednoczlonowe pseudonimy
+        (Henrique, Rafinha, Naldo) czeste w Brazylii i Portugalii.
     """
     # Po stronie FBref schodzimy z poziomu pary zawodnik-sezon na poziom
     # zawodnika: nazwisko nie zmienia sie miedzy sezonami, wiec wystarczy jeden
     # wiersz na player_id.
-    fbref = sezony[["player_id", "name"]].drop_duplicates(subset="player_id").copy()
+    fbref = sezony[["player_id", "name", "data_urodzenia"]].drop_duplicates(
+        subset="player_id"
+    ).copy()
     fbref["nazwa_norm"] = znormalizuj_nazwe(fbref["name"])
 
     tm = tm.copy()
     tm["nazwa_norm"] = znormalizuj_nazwe(tm["name"])
+    tm["date_of_birth"] = pd.to_datetime(tm["date_of_birth"], errors="coerce")
 
+    # ------------------------------------------------------------------
+    # ETAP A: dopasowanie po samej nazwie
+    # ------------------------------------------------------------------
     # drop_duplicates(keep=False) usuwa WSZYSTKIE wystapienia zdublowanej
     # wartosci, a nie tylko nadmiarowe. To rozni je od keep="first", ktore
     # zostawiloby pierwszy napotkany wiersz.
     #
     # Ta roznica jest tu calym sensem operacji. W TM jest kilku roznych
-    # zawodnikow o nazwie "Henrique"; keep="first" wybraloby jednego z nich
-    # na chybil trafil i przypisal jego wycene naszemu Henrique - z szansa
-    # trafienia jak przy rzucie moneta. keep=False mowi uczciwie "nie wiem,
-    # ktory to" i nie dopasowuje zadnego.
+    # brazylijskich zawodnikow o nazwie "Henrique"; keep="first" wybraloby
+    # jednego z nich na chybil trafil i przypisal jego wycene naszemu
+    # Henrique - z szansa trafienia jak przy rzucie moneta. keep=False mowi
+    # uczciwie "nie wiem, ktory to" i nie dopasowuje zadnego - na razie,
+    # bo ETAP B zaraz sproboje ich rozroznic po dacie urodzenia.
     tm_jednoznaczne = tm.drop_duplicates(subset="nazwa_norm", keep=False)
-    ile_tm_odrzuconych = len(tm) - len(tm_jednoznaczne)
-
-    # Ta sama regula po stronie FBref. Instrukcja opisuje ja tylko dla TM, ale
-    # kolizje wystepuja po obu stronach: w naszym zbiorze jest czterech roznych
-    # brazylijskich zawodnikow o nazwie "Henrique", roznych rocznikow i pozycji.
-    # Gdyby dedublowac tylko TM, wszyscy czterej dostaliby ten sam rekord z TM,
-    # a wiec ten sam wzrost, te sama noge i te sama wycene. Regula symetryczna
-    # kosztuje 0,48 punktu procentowego pokrycia i usuwa to ryzyko.
     fbref_jednoznaczne = fbref.drop_duplicates(subset="nazwa_norm", keep=False)
-    ile_fb_odrzuconych = len(fbref) - len(fbref_jednoznaczne)
 
     print(f"  zawodnikow FBref:              {len(fbref)}")
-    print(f"    odrzuconych za kolizje nazw: {ile_fb_odrzuconych}")
+    print(f"    z kolidujaca nazwa:          {len(fbref) - len(fbref_jednoznaczne)}")
     print(f"  rekordow w players.csv:        {len(tm)}")
-    print(f"    odrzuconych za kolizje nazw: {ile_tm_odrzuconych}")
+    print(f"    z kolidujaca nazwa:          {len(tm) - len(tm_jednoznaczne)}")
 
-    # Po odsianiu kolizji obie strony maja unikalne nazwy, wiec laczenie jest
-    # jeden do jednego. validate to potwierdzi, a how="inner" zostawi tylko tych,
-    # ktorzy maja pare po obu stronach.
-    crosswalk = fbref_jednoznaczne.merge(
+    crosswalk_nazwa = fbref_jednoznaczne.merge(
         tm_jednoznaczne[["nazwa_norm", "player_id"]].rename(
             columns={"player_id": "tm_player_id"}
         ),
@@ -1055,7 +1053,70 @@ def zbuduj_crosswalk(sezony: pd.DataFrame, tm: pd.DataFrame) -> pd.DataFrame:
         how="inner",
         validate="one_to_one",
     )
-    print(f"  dopasowanych zawodnikow:       {len(crosswalk)} "
+    print(f"  ETAP A - dopasowani po nazwie: {len(crosswalk_nazwa)}")
+
+    # ------------------------------------------------------------------
+    # ETAP B: dla nierozstrzygnietych - dopasowanie po (nazwa, data urodzenia)
+    # ------------------------------------------------------------------
+    # Data urodzenia FBref jest odtworzona z wieku podanego przy meczu (ETAP 3),
+    # wiec bywa przesunieta o kilka dni (P10 mierzy to w ETAPIE 6c: ok. 1,25%
+    # niezgodnosci wsrod juz potwierdzonych dopasowan). Gdyby zamienic (nazwa)
+    # na (nazwa, data) jako JEDYNY klucz, ETAP A stracilby wlasnie te 1,25%
+    # pewnych dopasowan. Dlatego ETAP B nie zastepuje ETAPU A, tylko dobiera
+    # tych, ktorych sama nazwa nie wystarczyla.
+    dopasowani_fbref = set(crosswalk_nazwa["player_id"])
+    dopasowani_tm = set(crosswalk_nazwa["tm_player_id"])
+
+    fbref_reszta = fbref[~fbref["player_id"].isin(dopasowani_fbref)]
+    fbref_reszta = fbref_reszta.dropna(subset=["data_urodzenia"])
+    tm_reszta = tm[~tm["player_id"].isin(dopasowani_tm)]
+    tm_reszta = tm_reszta.dropna(subset=["date_of_birth"])
+
+    # Ta sama zasada "keep=False" co w ETAPIE A, tylko na wezszym kluczu
+    # zlozonym. Sprawdzamy przy tym wprost to, o co chodzi w P10: czy istnieja
+    # dwaj rozni zawodnicy o tym samym imieniu i nazwisku urodzeni tego samego
+    # dnia - bo tylko oni pozostaliby nierozstrzygnieci nawet po tym kroku.
+    fbref_kolizje_daty = fbref_reszta[
+        fbref_reszta.duplicated(subset=["nazwa_norm", "data_urodzenia"], keep=False)
+    ]
+    if len(fbref_kolizje_daty):
+        print(
+            f"  FBref: {fbref_kolizje_daty['nazwa_norm'].nunique()} nazwisk nadal "
+            f"koliduje mimo dodania daty urodzenia:"
+        )
+        for _, wiersz in fbref_kolizje_daty.sort_values("nazwa_norm").iterrows():
+            print(f"    {wiersz['name']:30s} {wiersz['data_urodzenia'].date()}")
+
+    fbref_reszta_jednoznaczna = fbref_reszta.drop_duplicates(
+        subset=["nazwa_norm", "data_urodzenia"], keep=False
+    )
+    tm_reszta_jednoznaczna = tm_reszta.drop_duplicates(
+        subset=["nazwa_norm", "date_of_birth"], keep=False
+    )
+
+    crosswalk_data = fbref_reszta_jednoznaczna.merge(
+        tm_reszta_jednoznaczna[["nazwa_norm", "date_of_birth", "player_id"]].rename(
+            columns={"player_id": "tm_player_id", "date_of_birth": "data_urodzenia"}
+        ),
+        on=["nazwa_norm", "data_urodzenia"],
+        how="inner",
+        validate="one_to_one",
+    )
+    print(
+        f"  ETAP B - dopasowani dodatkowo po (nazwa, data urodzenia): "
+        f"{len(crosswalk_data)}"
+    )
+
+    crosswalk = pd.concat([crosswalk_nazwa, crosswalk_data], ignore_index=True)
+
+    assert not crosswalk["player_id"].duplicated().any(), (
+        "ten sam zawodnik FBref dopasowany dwukrotnie (ETAP A + ETAP B)"
+    )
+    assert not crosswalk["tm_player_id"].duplicated().any(), (
+        "ten sam zawodnik TM dopasowany dwukrotnie (ETAP A + ETAP B)"
+    )
+
+    print(f"  dopasowanych zawodnikow razem: {len(crosswalk)} "
           f"({100 * len(crosswalk) / len(fbref):.1f}% zawodnikow FBref)")
 
     return crosswalk[["player_id", "tm_player_id"]]
