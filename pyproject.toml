@@ -23,3 +23,8 @@ dev = [
     "pytest>=9.1.1",
     "ruff>=0.16.3",
 ]
+
+[tool.ruff.lint.isort]
+# Moduly pipeline'u lezace obok siebie w case_study/football - bez tego ruff
+# traktuje je jak biblioteki zewnetrzne i wciska miedzy pandas a numpy.
+known-local-folder = ["parametry", "zrodla", "cechy", "wycena", "zbiory"]
