@@ -20,3 +20,7 @@ data/processed/*.csv
 # ...ale puste katalogi-znaczniki i manifest zostaja w historii.
 !data/**/.gitkeep
 !data/processed/manifest.json
+
+# Migawki posrednich etapow do ogladania w Data Wrangler. Generowane na zadanie,
+# odtwarzalne uruchomieniem skryptu - nie ma powodu trzymac ich w historii.
+data/podglad/
