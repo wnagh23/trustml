@@ -60,7 +60,7 @@ def zbuduj_zbior_modelowy(sezony: pd.DataFrame) -> pd.DataFrame:
         *KLUCZ_SEZON,
         # metadane do analizy bledow, nie cechy
         "name", "tm_player_id",
-        "podzial",
+        "podzial", "znany_z_treningu",
         # cele
         "market_value_in_eur", "market_value_real",
         "log_market_value", "log_market_value_real",
@@ -121,6 +121,9 @@ def etap_10_zapisz(sezony: pd.DataFrame) -> pd.DataFrame:
         )
     for kolumna in WSKAZNIKI_PROCENTOWE:
         assert model[kolumna].dropna().between(0, 100).all(), f"{kolumna} poza [0,100]"
+    assert not model.loc[model["podzial"] == "trening", "znany_z_treningu"].any(), (
+        "wiersz treningowy oznaczony jako znany z treningu"
+    )
 
     print("\n  zbior modelowy:")
     for nazwa, ile in model["podzial"].value_counts().items():

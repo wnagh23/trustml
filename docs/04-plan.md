@@ -1,0 +1,300 @@
+# Plan i status
+
+Wersja 1.1, 2026-08-27
+
+Otwierasz ten plik, żeby wiedzieć, gdzie jesteś i co dalej. Wnioski z zakończonych
+etapów zostają tutaj — to jest pamięć projektu.
+
+Statusy: `[x]` zrobione, `[~]` w trakcie, `[ ]` nierozpoczęte.
+
+## Mapa drogowa
+
+| etap | zakres | status |
+|---|---|---|
+| E1 | pipeline danych | `[x]` |
+| E2 | porządki: manifest, testy, importy | `[ ]` |
+| E3 | analiza eksploracyjna | `[ ]` |
+| E4 | protokół walidacji i poziom odniesienia | `[ ]` |
+| E5 | modele M1–M3, wymiar W1 | `[ ]` |
+| E6 | trustml 0.1: szkielet, W1, W6 | `[ ]` |
+| E7 | odporność, wymiar W2 | `[ ]` |
+| E8 | niepewność, wymiar W3 | `[ ]` |
+| E9 | wyjaśnialność, wymiar W4 | `[ ]` |
+| E10 | sprawiedliwość, wymiar W5 | `[ ]` |
+| E11 | przesunięcie dziedziny: Primeira Liga | `[ ]` |
+| E12 | trustml 1.0 i synteza | `[ ]` |
+
+## E1 — pipeline danych
+
+Status: zrobione.
+
+Zbiór modelowy 13 709 na 114, 5 310 zawodników. Szczegóły w `02-dane.md`.
+
+Artefakty: moduły `zrodla.py`, `cechy.py`, `wycena.py`, `zbiory.py`, `parametry.py`
+i `przygotuj_dane.py` w `case_study/football/`, oraz `model.parquet`
+i `zawodnik_sezon.parquet` w `data/processed/`.
+
+Narzędzia: sqlite3, pandas 3.0, numpy, pyarrow, uv, ruff, Python 3.12.
+
+### Wnioski
+
+Parametr `validate=` w merge nie kosztuje nic i wykrywa klasę błędów, które inaczej
+ujawniają się dopiero jako niewytłumaczalne wyniki modelu. Poprzednia wersja
+pipeline'u łączyła po nazwisku bez walidacji i miała 846 zduplikowanych par
+zawodnik-sezon.
+
+Naiwne uśrednianie procentów z poziomu meczu daje błąd do 33 punktów procentowych.
+Wskaźnik musi być liczony jako suma liczników przez sumę mianowników na poziomie
+sezonu.
+
+Deflacja na stałym panelu, czyli na tych samych zawodnikach w kolejnych sezonach,
+jest błędna: mierzy sumę inflacji rynku i starzenia się zawodników, a ponieważ
+w próbie dominują zawodnicy po szczycie kariery, efekt starzenia przeważa. Dawała
+wniosek, że realne wartości potroiły się w osiem lat.
+
+Mediana jest złym estymatorem środka komórki, gdy źródło raportuje wartości
+w okrągłych progach — skacze między progami i daje „inflację" rzędu 60 procent tam,
+gdzie rynek ledwie drgnął. Użyliśmy średniej z logarytmu wartości.
+
+Braki w kolumnach procentowych są strukturalne (mianownik równy zeru), nie przypadkowe.
+Po agregacji sezonowej spadają z około 50 procent do około 2 procent i wtedy są
+informacją, a nie brakiem do imputacji.
+
+Filtr minimalnych minut jest konieczny, ale usuwa dane nielosowo: wypadają młodzi,
+rezerwowi i kontuzjowani, czyli systematycznie tańsi.
+
+## E2 — porządki
+
+Status: nierozpoczęte. Blokujący. Szacunek: jeden do dwóch dni.
+
+Celem jest zamknięcie długu, który przy obronie wyjdzie jako pierwszy w pracy
+o odtwarzalności.
+
+- `[ ]` `manifest.json` w etapie 10: SHA-256 każdego pliku wejściowego, wersje pandas,
+  numpy i Pythona, data uruchomienia, wszystkie parametry z `parametry.py`, liczby
+  wierszy po każdym etapie. To pierwszy realny kawałek W6 i kosztuje pół godziny.
+- `[x]` kolumna `znany_z_treningu` w etapie 8 (D-12). Bez niej każda stratyfikacja
+  wymagałaby przeliczania w każdym notatniku osobno.
+- `[ ]` `tests/test_dane.py` — przenieść asercje ze skryptu do pytest. Dziś sprawdzenia
+  odpalają się tylko przy pełnym przebiegu pipeline'u, czyli po dwudziestu minutach.
+  Test czytający `model.parquet` biegnie w sekundę i wykryje, że plik został
+  podmieniony. Zakres: unikalność klucza, brak Primeira Liga w treningu i kalibracji,
+  minuty powyżej progu, wskaźniki w zakresie od zera do stu albo NaN, rozłączność par
+  między zbiorami, oczekiwane kształty i liczebności.
+- `[ ]` naprawić importy. Moduły robią `from parametry import ...`, więc działają tylko
+  z konkretnego katalogu roboczego — dokładnie ta klasa błędów, przed którą miał
+  chronić layout `src` (D-19).
+- `[ ]` `README.md` — jak odtworzyć zbiór, jak odpalić testy.
+- `[ ]` pre-commit: `ruff format`, `ruff check`, `nbstripout`.
+
+## E3 — analiza eksploracyjna
+
+Status: nierozpoczęte. Szacunek: trzy do pięciu dni.
+
+Celem jest odpowiedzenie na pytania, których odpowiedzi zmienią decyzje w E4 i E5.
+Nie „zrobienie wykresów".
+
+- `[ ]` rozkład celu: nominalny, logarytmiczny, zdeflowany. Weryfikacja symetrii
+  po `log1p`.
+- `[ ]` skuteczność deflacji: czy po zdeflowaniu mediana realna jest płaska w czasie.
+  Jeśli nie, indeks jest źle policzony.
+- `[ ]` krzywa wiek-wartość. Weryfikacja kształtu odwróconego U, czyli uzasadnienia
+  dla cechy `wiek_do_kw`. Jeśli kształt nie jest paraboliczny, ta cecha jest ozdobnikiem
+  i trzeba to napisać.
+- `[ ]` struktura panelu: ilu zawodników w ilu sezonach, jak długi jest ogon
+  jednosezonowy. Wejście do GroupKFold w E4.
+- `[ ]` rozkład celu i cech w podgrupach: pozycja, liga, region, wiek. Wstępna diagnoza
+  W5 przed jakimikolwiek resztami modelu.
+- `[ ]` korelacje między cechami `_p90`: ile z 87 jest redundantnych przy współczynniku
+  powyżej 0,95. Wejście do filtra korelacyjnego w Pipeline.
+- `[ ]` mapa braków: czy 295 braków w `dribble_success_percentage` rozkłada się losowo,
+  czy koncentruje w jednej pozycji lub lidze. Jeśli koncentruje, imputacja medianą
+  wprowadzi obciążenie grupowe, czyli problem dla W5.
+- `[ ]` wrażliwość na próg minut: 0, 225, 450 i 900. Ile par zostaje, jak zmienia się
+  wariancja cech `_p90`, jak zmienia się skład wiekowy.
+- `[ ]` sufit informacyjny: ile wariancji celu tłumaczy sam wiek plus pozycja plus liga,
+  bez statystyk gry. Podaje realistyczne oczekiwanie na R².
+- `[ ]` PSI i test Kołmogorowa-Smirnowa dla cech Big 5 wobec zbioru C. Tylko cechy,
+  bez zmiennej celu (D-14).
+
+Narzędzia: matplotlib, seaborn, scipy, statsmodels. Artefakty: `notebooks/01-eda.ipynb`,
+`reports/figures/eda/`.
+
+## E4 — protokół walidacji i poziom odniesienia
+
+Status: nierozpoczęte. Szacunek: dwa do trzech dni. Najważniejszy metodologicznie.
+
+Celem jest ustalenie raz zasad oceny i nigdy ich nie zmienianie. Zmiana protokołu
+po zobaczeniu wyników to najcichszy sposób na oszukanie samego siebie.
+
+- `[ ]` `configs/split.yaml` — podział zamrożony, z hashem `model.parquet`.
+- `[ ]` `src/trustml/evaluation/splits.py` — GroupKFold po `player_id` wewnątrz zbioru
+  treningowego, do strojenia hiperparametrów.
+- `[ ]` `tests/test_no_leakage.py` — przecięcie par `(player_id, season)` między
+  zbiorami musi być puste. Osobno raport przecięcia samych `player_id`, jako świadoma
+  i udokumentowana cecha podziału (D-12).
+- `[ ]` `src/trustml/evaluation/metrics.py` — RMSLE, MdAPE, MAE, R², wszystkie
+  z obowiązkowym parametrem stratyfikacji (D-12).
+- `[ ]` transformacja odwrotna do euro: korekta Duana albo jawna deklaracja,
+  że raportujemy medianę warunkową. Rozstrzygnąć raz.
+- `[ ]` poziom odniesienia: M0a mediana globalna, M0b mediana w komórce pozycja × liga
+  × sezon, M0c przepisanie wyceny z t−1 (D-06). M0c raportowany w dwóch wariantach:
+  na podzbiorze z dostępnym t−1, czyli 71,6 procent testu, oraz na pełnym teście
+  z uzupełnieniem M0b.
+
+Kluczowe pytanie tego etapu: jak wysoko leży M0b i M0c. Ta liczba określa wymowę całej
+pracy. W poprzedniej wersji zbioru M0c dawało R² 0,69 i bez tego punktu odniesienia
+R² 0,88 modelu byłoby łatwo przecenić.
+
+Artefakty: `configs/split.yaml`, `src/trustml/evaluation/metrics.py` i `splits.py`,
+`tests/test_no_leakage.py`, `reports/tables/e4_baseline.csv`.
+
+## E5 — modele M1–M3, wymiar W1
+
+Status: nierozpoczęte. Szacunek: cztery do sześciu dni.
+
+- `[ ]` wspólny Pipeline: `SimpleImputer`, filtr korelacyjny,
+  `OneHotEncoder(handle_unknown="ignore")` bez `drop`, `StandardScaler`.
+- `[ ]` M1 Elastic Net na `log1p(y)`, alfa i `l1_ratio` z walidacji krzyżowej.
+- `[ ]` M2 Random Forest.
+- `[ ]` M3 XGBoost, early stopping na zbiorze kalibracyjnym.
+- `[ ]` strojenie przez optunę, około stu prób na model, wyłącznie GroupKFold
+  na treningu.
+- `[ ]` MLflow: każdy przebieg z hashem danych i configu.
+- `[ ]` analiza reszt: heteroskedastyczność, regresja do średniej w ogonach, odchylenia
+  per liga i pozycja.
+- `[ ]` porównanie celu nominalnego i zdeflowanego (D-04). Hipoteza: drzewa nie zyskają,
+  modele liniowe mogą.
+- `[ ]` test jednostkowy na pułapkę `drop="first"` z D-10.
+
+Artefakty: `src/trustml/models/`, `models/*.joblib`, `mlruns/`,
+`reports/tables/e5_w1.csv`, `notebooks/02-modelowanie.ipynb`.
+
+## E6 — trustml 0.1
+
+Status: nierozpoczęte. Szacunek: cztery do sześciu dni.
+
+Celem jest postawienie pakietu, zanim eksperymentów będzie za dużo, żeby dało się je
+ujednolicić.
+
+- `[ ]` klasa `TrustReport` z API opisanym w `01-projekt.md`.
+- `[ ]` `evaluation/correctness.py` — wymiar W1.
+- `[ ]` `evaluation/reproducibility.py` — wymiar W6: wariancja ziarnowa, hash danych,
+  determinizm.
+- `[ ]` renderer raportu HTML na jinja2.
+- `[ ]` testy jednostkowe, pokrycie powyżej 70 procent.
+- `[ ]` CI na GitHub Actions: ruff i pytest przy każdym pushu.
+- `[ ]` rozstrzygnąć, czym `trustml` różni się od deepchecks, giskard, evidently
+  i fairlearn. Przez lekturę ich dokumentacji, nie przez zgadywanie. Bez odpowiedzi
+  wkład pracy jest podważalny na obronie.
+
+## E7 — odporność, wymiar W2
+
+- `[ ]` rolling origin: trenuj na sezonach do t, testuj na t+1, przesuwaj t. Wynikiem
+  jest krzywa degradacji w czasie, nie pojedynczy punkt. Uwaga na lukę kalendarzową
+  między 2018-2019 a 2020-2021 (D-08).
+- `[ ]` szum gaussowski o sigma 1, 5 i 10 procent na cechach `_p90`.
+- `[ ]` maskowanie 5 i 10 procent losowych cech z imputacją z treningu.
+- `[ ]` perturbacja skierowana: zaburzenie wyłącznie najważniejszych cech według SHAP
+  i porównanie z zaburzeniem losowym.
+- `[ ]` metryka zbiorcza odporności jako nachylenie krzywej degradacji.
+- `[ ]` `evaluation/robustness.py`.
+
+## E8 — niepewność, wymiar W3
+
+- `[ ]` predykcja konforemna przez MAPIE, alfa 0,1 i 0,2, kalibracja na sezonie
+  2022-2023.
+- `[ ]` pokrycie empiryczne wobec nominalnego oraz średnia szerokość przedziału —
+  zawsze razem.
+- `[ ]` pokrycie warunkowe według pozycji, ligi, decyla wartości, wieku oraz osi
+  znani/nowi (D-12).
+- `[ ]` porównanie z alternatywami: regresja kwantylowa w XGBoost, rozrzut drzew
+  w Random Forest.
+- `[ ]` `evaluation/uncertainty.py`.
+
+Uwaga metodologiczna: predykcja konforemna zakłada wymienialność obserwacji, którą
+podział temporalny łamie. Trzeba to opisać jawnie i pokazać liczbowo, jak duży jest
+efekt.
+
+## E9 — wyjaśnialność, wymiar W4
+
+- `[ ]` SHAP: `TreeExplainer` dla drzew, `LinearExplainer` dla Elastic Net.
+- `[ ]` permutation importance jako niezależna weryfikacja.
+- `[ ]` PDP i ALE dla wieku, minut i xG na 90 minut.
+- `[ ]` stabilność: dziesięć przebiegów z różnymi ziarnami, ranking cech według
+  średniego modułu SHAP, rozkład tau Kendalla dla wszystkich par rankingów, pokrycie
+  pierwszej dziesiątki między przebiegami.
+- `[ ]` sanity check dziedzinowy: czy najważniejsze cechy są sensowne merytorycznie.
+- `[ ]` `evaluation/explainability.py`.
+
+## E10 — sprawiedliwość, wymiar W5
+
+- `[ ]` grupy: pozycja, liga, region, przedział wieku, decyl wartości.
+- `[ ]` parytet jakości (różnica RMSLE i MdAPE) oraz parytet obciążenia (średnia
+  reszty) — dwa niezależne pomiary.
+- `[ ]` coverage gap, czyli różnica pokrycia konforemnego między grupami. Spina W3 z W5.
+- `[ ]` bootstrap na istotność różnic międzygrupowych, nie same wartości punktowe.
+- `[ ]` analiza źródła obciążenia: czy luka pochodzi z modelu, czy jest odziedziczona
+  po wycenach Transfermarkt.
+- `[ ]` `evaluation/fairness.py`.
+
+Język opisu: mierzymy obciążenie wycen, nie stwierdzamy dyskryminacji zawodników.
+
+## E11 — przesunięcie dziedziny: Primeira Liga
+
+Jeden eksperyment, w którym wszystkie wymiary są mierzone naraz.
+
+- `[ ]` zmierzyć wielkość przesunięcia cech: PSI i test Kołmogorowa-Smirnowa. Można
+  wcześniej (D-14).
+- `[ ]` pełny `TrustReport` dla wszystkich modeli, w wariantach z ligą i bez (D-11).
+- `[ ]` rozkład degradacji na obciążenie kierunkowe i rozrzut (D-13). Obowiązkowo,
+  inaczej wynik nie znaczy nic.
+- `[ ]` porównanie główne na podzbiorach „nowi vs nowi" (D-12); wersja „całość vs
+  całość" raportowana obok.
+- `[ ]` wariant z rekalibracją przesunięcia na małej próbce ze zbioru C.
+- `[ ]` W3: załamanie pokrycia konforemnego — hipoteza główna eksperymentu.
+- `[ ]` W4: czy ranking SHAP zmienia się między dziedzinami.
+- `[ ]` analiza: które wymiary degradują pierwsze i najmocniej.
+
+Rozszerzenie: drabinka lig, od 0,8 mln euro w Primeira Lidze po 15 mln w Premier
+League, pozwala zbudować krzywą dawka-odpowiedź zamiast testu binarnego.
+
+## E12 — trustml 1.0 i synteza
+
+- `[ ]` wszystkie moduły W1–W6 zintegrowane w `TrustReport`.
+- `[ ]` `scripts/run_all.py` — jedna komenda odtwarzająca wszystkie wyniki.
+- `[ ]` test przejścia na ACSIncome z folktables, bez zmiany linii w `src/`.
+- `[ ]` pokrycie testami powyżej 80 procent, zielone CI.
+- `[ ]` macierz zbiorcza: modele w wierszach, W1–W6 w kolumnach, z rankingiem w każdej
+  kolumnie.
+- `[ ]` tau Kendalla między rankingami według różnych wymiarów. To jest liczba
+  potwierdzająca lub obalająca założenie robocze pracy.
+- `[ ]` test istotności: czy różnice między modelami przekraczają wariancję ziarnową.
+- `[ ]` dyskusja, dlaczego agregowanie wymiarów o różnych jednostkach w jeden indeks
+  jest problematyczne.
+- `[ ]` wersja 1.0.0, tag w gicie, `CITATION.cff`.
+
+## Pytania otwarte
+
+O-1. Czy jeden sezon testowy, czyli 1 957 par, wystarczy jako główny wynik, czy przejść
+na rolling origin już w E4. Koszt: mniej danych treningowych w każdym oknie. Zysk:
+krzywa zamiast punktu i odporniejszy wynik główny. Termin: przed E4.
+
+O-2. Zbiór C nie zawiera sezonu 2017-2018. Brak w źródle czy skutek filtrów. Wpływ
+na E11 prawdopodobnie żaden, ale trzeba wiedzieć. Termin: przy E3.
+
+O-3. Czy wskaźniki procentowe z brakiem strukturalnym powinny dostać flagę
+„nie próbował" obok imputacji, czy samą imputację (D-09). Termin: przy budowie Pipeline
+w E5.
+
+O-4. Czym `trustml` różni się od deepchecks, giskard, evidently i fairlearn.
+Termin: najpóźniej E6.
+
+O-5. Wersjonowanie danych: DVC, Git LFS, czy zostawić poza repozytorium. Dziś 2,4 GB
+leży poza gitem. Termin: przed złożeniem.
+
+## Powiązane dokumenty
+
+- `01-projekt.md` — cel pracy, wymiary W1–W6, modele
+- `02-dane.md` — źródła, pipeline, słownik zbioru, ograniczenia
+- `03-decyzje.md` — log decyzji projektowych

@@ -1,8 +1,6 @@
 """
 Parametry przygotowania danych.
 
-Wszystko, co mozna chciec zmienic bez ruszania logiki: sciezki, progi, listy
-sezonow, mapowania. Jedno miejsce, zeby nie szukac stalych po modulach.
 """
 
 from pathlib import Path
@@ -12,9 +10,6 @@ def znajdz_korzen_repo(start: Path) -> Path:
     """
     Idzie w gore katalogow, az znajdzie pyproject.toml.
 
-    Odporniejsze niz liczenie poziomow w gore: po przeniesieniu katalogu
-    sciezka nadal wskaze wlasciwe miejsce, a jesli cos pojdzie nie tak,
-    dostaniemy czytelny blad zamiast cichego szukania danych gdzie indziej.
     """
     for katalog in [start, *start.parents]:
         if (katalog / "pyproject.toml").exists():

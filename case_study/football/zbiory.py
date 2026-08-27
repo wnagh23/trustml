@@ -36,7 +36,7 @@ def etap_8_podziel(sezony: pd.DataFrame) -> pd.DataFrame:
         sezony - tabela z etapu 7
 
     Zwraca:
-        te sama tabele z kolumna "podzial".
+        te sama tabele z kolumnami "podzial" i "znany_z_treningu".
     """
     print("\nETAP 8  podzial na trening / kalibracja / test / zbior_C")
 
@@ -81,11 +81,24 @@ def etap_8_podziel(sezony: pd.DataFrame) -> pd.DataFrame:
     # ktorych rynek juz zna. Ale przy raportowaniu: R2 na calym tescie jest
     # wyzsze niz dla zawodnika nowego, a test ma 66% znanych wobec 9% w zbiorze
     # C, wiec uczciwe porownanie dla W2 to nowi z nowymi.
+    #
+    # Zapisujemy to jako kolumne, nie tylko wypisujemy. Bez niej kazdy notatnik
+    # i kazdy modul ewaluacji musialby odtwarzac zbior player_id z treningu
+    # u siebie - wystarczy, ze raz zrobi to inaczej (np. po nazwisku zamiast
+    # po id) i stratyfikacja przestaje byc porownywalna miedzy raportami.
+    # To jest metadana, nie cecha - do modelu nie wchodzi.
     w_treningu = set(sezony.loc[sezony["podzial"] == "trening", "player_id"])
+    sezony["znany_z_treningu"] = sezony["player_id"].isin(w_treningu)
+
+    # Wiersze treningowe oznaczamy jako False. Kazdy zawodnik z treningu bylby
+    # inaczej "znany sam sobie", a kolumna ma odpowiadac na pytanie: czy model
+    # widzial juz tego zawodnika, ZANIM dostal ten konkretny wiersz.
+    sezony.loc[sezony["podzial"] == "trening", "znany_z_treningu"] = False
+
     print("\n  zawodnicy znani z treningu:")
     for nazwa in ["kalibracja", "test", "zbior_C"]:
         pod = sezony[sezony["podzial"] == nazwa]
-        znani = pod["player_id"].isin(w_treningu).sum()
+        znani = pod["znany_z_treningu"].sum()
         print(f"    {nazwa:11s} {znani:5d} z {len(pod):5d} par "
               f"({100 * znani / len(pod):4.1f}%)")
 
