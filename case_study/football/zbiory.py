@@ -12,7 +12,7 @@ from itertools import pairwise
 import numpy as np
 import pandas as pd
 
-from parametry import (
+from .parametry import (
     KLUCZ_SEZON,
     LIGA_ZBIOR_C,
     MIN_OBSERWACJI_KOMORKA,
@@ -29,8 +29,8 @@ def etap_8_podziel(sezony: pd.DataFrame) -> pd.DataFrame:
     """
     Przypisuje kazdej parze zawodnik-sezon jeden z czterech zbiorow.
 
-    Podzial czasowy, nie losowy - losowy rozrzucilby tego samego zawodnika po
-    treningu i tescie, a jego wycena jest z roku na rok mocno skorelowana.
+    Podzial czasowy - losowy rozrzucilby tego samego zawodnika po treningu
+    i tescie, a jego wycena jest z roku na rok mocno skorelowana.
 
     Przyjmuje:
         sezony - tabela z etapu 7
@@ -57,9 +57,11 @@ def etap_8_podziel(sezony: pd.DataFrame) -> pd.DataFrame:
     print()
     for nazwa in ["trening", "kalibracja", "test", "zbior_C"]:
         pod = sezony[sezony["podzial"] == nazwa]
-        print(f"  {nazwa:12s} {len(pod):6d} par ({100 * len(pod) / len(sezony):5.1f}%)  "
-              f"{pod['player_id'].nunique():5d} zawodnikow  "
-              f"sezony: {', '.join(sorted(pod['season'].unique()))}")
+        print(
+            f"  {nazwa:12s} {len(pod):6d} par ({100 * len(pod) / len(sezony):5.1f}%)  "
+            f"{pod['player_id'].nunique():5d} zawodnikow  "
+            f"sezony: {', '.join(sorted(pod['season'].unique()))}"
+        )
 
     assert (sezony["podzial"] != "").all(), "sa pary bez przypisanego zbioru"
     for zbior in ["trening", "kalibracja"]:
@@ -70,23 +72,24 @@ def etap_8_podziel(sezony: pd.DataFrame) -> pd.DataFrame:
     )
 
     # Ten sam zawodnik moze byc w treningu i w innym zbiorze, w roznych sezonach.
-    # Pary sa rozlaczne, wiec formalnie wycieku nie ma, ale model rozpoznaje
+    # Pary sa rozlaczne, wiec formalnie podzial jest czysty, ale model rozpoznaje
     # zawodnika po kombinacji wzrostu, wieku, pozycji i profilu statystycznego -
-    # mimo ze player_id nie jest cecha. Zmierzone modelem HistGradientBoosting:
+    # mimo ze player_id zostaje poza cechami. Zmierzone HistGradientBoostingiem:
     #   test:    znani R2 0,68 | nowi R2 0,56
     #   zbior_C: znani R2 0,51 | nowi R2 -0,50
-    # Przewaga zostaje po wyrownaniu wieku grup, wiec nie jest artefaktem skladu.
+    # Przewaga zostaje po wyrownaniu wieku grup, wiec bierze sie z samej
+    # znajomosci zawodnika.
     #
-    # Zdecydowano nie zmieniac podzialu - w praktyce wycenia sie zawodnikow,
+    # Podzial zostaje taki, jaki jest - w praktyce wycenia sie zawodnikow,
     # ktorych rynek juz zna. Ale przy raportowaniu: R2 na calym tescie jest
     # wyzsze niz dla zawodnika nowego, a test ma 66% znanych wobec 9% w zbiorze
     # C, wiec uczciwe porownanie dla W2 to nowi z nowymi.
     #
-    # Zapisujemy to jako kolumne, nie tylko wypisujemy. Bez niej kazdy notatnik
-    # i kazdy modul ewaluacji musialby odtwarzac zbior player_id z treningu
-    # u siebie - wystarczy, ze raz zrobi to inaczej (np. po nazwisku zamiast
-    # po id) i stratyfikacja przestaje byc porownywalna miedzy raportami.
-    # To jest metadana, nie cecha - do modelu nie wchodzi.
+    # Zapisujemy to jako kolumne w zbiorze. Inaczej kazdy notatnik i kazdy modul
+    # ewaluacji odtwarzalby zbior player_id z treningu u siebie - wystarczy, ze
+    # raz zrobi to po nazwisku zamiast po id, i stratyfikacja przestaje byc
+    # porownywalna miedzy raportami.
+    # To metadana do analizy, trzymana poza zestawem cech modelu.
     w_treningu = set(sezony.loc[sezony["podzial"] == "trening", "player_id"])
     sezony["znany_z_treningu"] = sezony["player_id"].isin(w_treningu)
 
@@ -99,8 +102,10 @@ def etap_8_podziel(sezony: pd.DataFrame) -> pd.DataFrame:
     for nazwa in ["kalibracja", "test", "zbior_C"]:
         pod = sezony[sezony["podzial"] == nazwa]
         znani = pod["znany_z_treningu"].sum()
-        print(f"    {nazwa:11s} {znani:5d} z {len(pod):5d} par "
-              f"({100 * znani / len(pod):4.1f}%)")
+        print(
+            f"    {nazwa:11s} {znani:5d} z {len(pod):5d} par "
+            f"({100 * znani / len(pod):4.1f}%)"
+        )
 
     return sezony
 
@@ -114,8 +119,8 @@ def policz_indeks_inflacji(trening: pd.DataFrame) -> dict[str, float]:
 
     Dla kazdej pary kolejnych sezonow porownuje srednia log(wartosc) w komorkach
     wiek x pozycja i usrednia roznice wazone liczebnoscia. Porownujemy zawodnikow
-    w tym samym wieku, a nie tych samych ludzi - inaczej starzenie sie mieszaloby
-    sie z inflacja.
+    w tym samym wieku, dobieranych osobno w kazdym sezonie - inaczej starzenie sie
+    mieszaloby sie z inflacja.
 
     Przyjmuje:
         trening - wylacznie wiersze treningowe; policzenie indeksu na wszystkich
@@ -139,23 +144,32 @@ def policz_indeks_inflacji(trening: pd.DataFrame) -> dict[str, float]:
         roznice, wagi = [], []
         for komorka in dane["komorka_wieku"].cat.categories:
             for pozycja in ["DEF", "MID", "FOR"]:
-                a = grupa_a[(grupa_a["komorka_wieku"] == komorka)
-                            & (grupa_a["pozycja"] == pozycja)]["log_wartosc"]
-                b = grupa_b[(grupa_b["komorka_wieku"] == komorka)
-                            & (grupa_b["pozycja"] == pozycja)]["log_wartosc"]
-                if len(a) >= MIN_OBSERWACJI_KOMORKA and len(b) >= MIN_OBSERWACJI_KOMORKA:
-                    # Srednia, nie mediana: TM wycenia w okraglych progach
-                    # (123 rozne wartosci w calym zbiorze), wiec mediana komorki
-                    # o 60-140 obserwacjach skacze miedzy progami i daje
-                    # "inflacje" +60% tam, gdzie rynek ledwie drgnal.
+                a = grupa_a[
+                    (grupa_a["komorka_wieku"] == komorka)
+                    & (grupa_a["pozycja"] == pozycja)
+                ]["log_wartosc"]
+                b = grupa_b[
+                    (grupa_b["komorka_wieku"] == komorka)
+                    & (grupa_b["pozycja"] == pozycja)
+                ]["log_wartosc"]
+                if (
+                    len(a) >= MIN_OBSERWACJI_KOMORKA
+                    and len(b) >= MIN_OBSERWACJI_KOMORKA
+                ):
+                    # Srednia: TM wycenia w okraglych progach (123 rozne wartosci
+                    # w calym zbiorze), wiec mediana komorki o 60-140 obserwacjach
+                    # skacze miedzy progami i daje "inflacje" +60% tam, gdzie
+                    # rynek ledwie drgnal.
                     roznice.append(b.mean() - a.mean())
                     wagi.append(len(a))
 
         zmiana = np.average(roznice, weights=wagi) if roznice else 0.0
         biezacy *= np.exp(zmiana)
         wspolczynniki[pozniejszy] = biezacy
-        print(f"    {wczesniejszy} -> {pozniejszy}  {100 * (np.exp(zmiana) - 1):>+7.1f}%  "
-              f"({len(roznice)} komorek)")
+        print(
+            f"    {wczesniejszy} -> {pozniejszy}  {100 * (np.exp(zmiana) - 1):>+7.1f}%  "
+            f"({len(roznice)} komorek)"
+        )
 
     return wspolczynniki
 
@@ -177,8 +191,8 @@ def etap_9_deflacja(sezony: pd.DataFrame) -> pd.DataFrame:
 
     sezony = sezony.copy()
 
-    # Funkcja dostaje wylacznie trening - fizycznie nie widzi kalibracji, testu
-    # ani zbioru C.
+    # Funkcja dostaje wylacznie trening - kalibracja, test i zbior C zostaja poza
+    # jej zasiegiem.
     trening = sezony[sezony["podzial"] == "trening"]
     print(f"\n  indeks liczony na {len(trening)} parach treningowych")
     wspolczynniki = policz_indeks_inflacji(trening)
@@ -196,12 +210,12 @@ def etap_9_deflacja(sezony: pd.DataFrame) -> pd.DataFrame:
         print(f"    {sezon}  {wspolczynniki[sezon]:.4f}  ({zrodlo})")
 
     # Inflacja w Big 5 siega 38% miedzy 2017-2018 a 2023-2024, a poziom testu
-    # lezy 18,4% powyzej treningu. Mimo to deflacja nie pomaga - test na
-    # HistGradientBoosting dal MAE 0,5757 wobec 0,5734 bez niej. Drzewa nie
-    # ekstrapoluja poza zakres treningu, wiec roznica poziomow przeklada sie
+    # lezy 18,4% powyzej treningu. Deflacja mimo to pogarsza wynik - test na
+    # HistGradientBoosting dal MAE 0,5757 wobec 0,5734 na celu nominalnym. Drzewa
+    # trzymaja sie zakresu treningu, wiec roznica poziomow przeklada sie
     # na obciazenie slabiej, niz sugeruje porownanie srednich.
-    sezony["market_value_real"] = (
-        sezony["market_value_in_eur"] / sezony["season"].map(wspolczynniki)
+    sezony["market_value_real"] = sezony["market_value_in_eur"] / sezony["season"].map(
+        wspolczynniki
     )
     # log1p zamiast log - odporny na zero, gdyby kiedys przeszlo przez filtry.
     sezony["log_market_value"] = np.log1p(sezony["market_value_in_eur"])
@@ -211,6 +225,8 @@ def etap_9_deflacja(sezony: pd.DataFrame) -> pd.DataFrame:
     assert sezony["log_market_value"].notna().all(), "brak w celu glownym"
 
     print("\n  cel glowny: log_market_value (nominalny)")
-    print(f"  skosnosc: surowo {sezony['market_value_in_eur'].skew():.2f}, "
-          f"po log {sezony['log_market_value'].skew():.2f}")
+    print(
+        f"  skosnosc: surowo {sezony['market_value_in_eur'].skew():.2f}, "
+        f"po log {sezony['log_market_value'].skew():.2f}"
+    )
     return sezony

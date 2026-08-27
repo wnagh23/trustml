@@ -1,0 +1,126 @@
+{
+  "opis": "Prowieniencja master.db odtworzona z archiwow ZIP. Kazda strona to surowy dokument FBref o adresie https://fbref.com/en/matches/<match_id>/..., a data modyfikacji pliku w archiwum to data pobrania.",
+  "zbadano": "2026-08-27T11:08:55+00:00",
+  "wzor_adresu": "https://fbref.com/en/matches/{match_id}/",
+  "scrape_od": "2023-02-14T18:20:52",
+  "scrape_do": "2026-01-17T00:12:52",
+  "stron_lacznie": 17551,
+  "meczow_w_master_db": 17551,
+  "stron_bez_meczu_w_bazie": 0,
+  "meczow_bez_strony": 0,
+  "archiwa": [
+    {
+      "plik": "Bundesliga.zip",
+      "rozmiar_mb": 203.1,
+      "stron": 2596,
+      "sezony": {
+        "2017-2018": 306,
+        "2018-2019": 306,
+        "2019-2020": 306,
+        "2020-2021": 306,
+        "2021-2022": 305,
+        "2022-2023": 306,
+        "2023-2024": 306,
+        "2024-2025": 305,
+        "2025-2026": 150
+      },
+      "scrape_od": "2023-02-14T21:09:54",
+      "scrape_do": "2026-01-17T00:09:54",
+      "przyklad_url": "https://fbref.com/en/matches/01024937/RB-Leipzig-Hamburger-SV-January-27-2018-Bundesliga"
+    },
+    {
+      "plik": "La_Liga.zip",
+      "rozmiar_mb": 250.5,
+      "stron": 3229,
+      "sezony": {
+        "2017-2018": 380,
+        "2018-2019": 380,
+        "2019-2020": 380,
+        "2020-2021": 380,
+        "2021-2022": 380,
+        "2022-2023": 380,
+        "2023-2024": 380,
+        "2024-2025": 380,
+        "2025-2026": 189
+      },
+      "scrape_od": "2023-02-14T22:35:22",
+      "scrape_do": "2026-01-17T00:10:08",
+      "przyklad_url": "https://fbref.com/en/matches/9141f201/Villarreal-Leganes-April-17-2018-La-Liga"
+    },
+    {
+      "plik": "Ligue_1.zip",
+      "rozmiar_mb": 227.9,
+      "stron": 2943,
+      "sezony": {
+        "2017-2018": 380,
+        "2018-2019": 380,
+        "2019-2020": 279,
+        "2020-2021": 380,
+        "2021-2022": 380,
+        "2022-2023": 380,
+        "2023-2024": 306,
+        "2024-2025": 305,
+        "2025-2026": 153
+      },
+      "scrape_od": "2023-02-15T00:16:36",
+      "scrape_do": "2026-01-12T17:30:18",
+      "przyklad_url": "https://fbref.com/en/matches/002a31fa/Strasbourg-Montpellier-February-23-2018-Ligue-1"
+    },
+    {
+      "plik": "Premier_League.zip",
+      "rozmiar_mb": 249.5,
+      "stron": 3250,
+      "sezony": {
+        "2017-2018": 380,
+        "2018-2019": 380,
+        "2019-2020": 380,
+        "2020-2021": 380,
+        "2021-2022": 380,
+        "2022-2023": 380,
+        "2023-2024": 380,
+        "2024-2025": 380,
+        "2025-2026": 210
+      },
+      "scrape_od": "2023-02-14T18:20:52",
+      "scrape_do": "2026-01-12T16:16:08",
+      "przyklad_url": "https://fbref.com/en/matches/00836893/Bournemouth-Brighton-and-Hove-Albion-September-15-2017-Premier-League"
+    },
+    {
+      "plik": "Primeira_Liga.zip",
+      "rozmiar_mb": 178.7,
+      "stron": 2295,
+      "sezony": {
+        "2018-2019": 306,
+        "2019-2020": 306,
+        "2020-2021": 306,
+        "2021-2022": 306,
+        "2022-2023": 306,
+        "2023-2024": 306,
+        "2024-2025": 306,
+        "2025-2026": 153
+      },
+      "scrape_od": "2024-11-08T05:08:08",
+      "scrape_do": "2026-01-12T19:36:58",
+      "przyklad_url": "https://fbref.com/en/matches/b36965d5/Chaves-Portimonense-August-18-2018-Primeira-Liga"
+    },
+    {
+      "plik": "Serie_A.zip",
+      "rozmiar_mb": 255.1,
+      "stron": 3238,
+      "sezony": {
+        "2017-2018": 380,
+        "2018-2019": 380,
+        "2019-2020": 380,
+        "2020-2021": 379,
+        "2021-2022": 380,
+        "2022-2023": 380,
+        "2023-2024": 380,
+        "2024-2025": 379,
+        "2025-2026": 200
+      },
+      "scrape_od": "2023-02-15T01:23:30",
+      "scrape_do": "2026-01-17T00:12:52",
+      "przyklad_url": "https://fbref.com/en/matches/f6b17cde/Milan-Fiorentina-May-20-2018-Serie-A"
+    }
+  ]
+}

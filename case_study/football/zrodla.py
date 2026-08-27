@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from parametry import (
+from .parametry import (
     KLUCZ,
     KOLUMNY_Z_MATCH,
     KOLUMNY_ZREDUNDOWANE,
@@ -46,8 +46,8 @@ def wczytaj_tabele(polaczenie: sqlite3.Connection, nazwa: str) -> pd.DataFrame:
     # Match ma tylko match_id, tabele wystepow pelny klucz zlozony.
     klucz = [k for k in KLUCZ if k in tabela.columns]
 
-    # Jesli duplikaty nie byly identycznymi kopiami, drop_duplicates ich nie
-    # usunal i przy laczeniu rozmnozylyby wiersze.
+    # drop_duplicates usuwa wylacznie identyczne kopie - duplikat klucza o roznej
+    # tresci przetrwalby i przy laczeniu rozmnozyl wiersze.
     nadmiarowe = tabela.duplicated(subset=klucz).sum()
     assert nadmiarowe == 0, (
         f"{nazwa}: po deduplikacji nadal {nadmiarowe} zdublowanych kluczy {klucz}"
@@ -63,8 +63,8 @@ def usun_redundancje(tabele: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]
         tabele - slownik {nazwa_tabeli: DataFrame}
 
     Zwraca:
-        ten sam slownik z wezszymi tabelami. Po tej operacji zadna nazwa kolumny
-        poza kluczem nie powtarza sie miedzy tabelami polowymi.
+        ten sam slownik z wezszymi tabelami. Po tej operacji kazda nazwa kolumny
+        poza kluczem wystepuje w dokladnie jednej tabeli polowej.
     """
     for nazwa, do_usuniecia in KOLUMNY_ZREDUNDOWANE.items():
         tabele[nazwa] = tabele[nazwa].drop(columns=do_usuniecia)
@@ -84,7 +84,7 @@ def usun_redundancje(tabele: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]
 
     kolizje = {k: v for k, v in gdzie_wystepuje.items() if len(v) > 1}
     assert not kolizje, f"pozostaly kolizje nazw kolumn: {kolizje}"
-    print(f"  zadna z {len(gdzie_wystepuje)} nazw kolumn sie nie powtarza")
+    print(f"  kazda z {len(gdzie_wystepuje)} nazw kolumn wystepuje raz")
 
     return tabele
 
@@ -101,7 +101,7 @@ def etap_1_wczytaj(sciezka_db: Path) -> dict[str, pd.DataFrame]:
 
     assert sciezka_db.exists(), f"nie znaleziono bazy: {sciezka_db}"
 
-    # mode=ro gwarantuje, ze skrypt nie zapisze niczego do data/raw.
+    # mode=ro gwarantuje, ze skrypt wylacznie czyta z data/raw.
     uri = f"file:{sciezka_db.as_posix()}?mode=ro"
     tabele: dict[str, pd.DataFrame] = {}
 

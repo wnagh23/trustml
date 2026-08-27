@@ -1,0 +1,316 @@
+{
+  "uruchomiono": "2026-08-27T11:33:53+00:00",
+  "srodowisko": {
+    "python": "3.12.13",
+    "platforma": "Windows-11-10.0.26200-SP0",
+    "pandas": "3.0.5",
+    "numpy": "2.5.2"
+  },
+  "pliki_wejsciowe": {
+    "master.db": {
+      "sha256": "e3641a0654f0dfafe6f431a01d290b26ea01eae5ce62c23b7f153dc859315174",
+      "rozmiar_mb": 210.9,
+      "zmodyfikowany": "2026-08-18T20:35:07+00:00"
+    },
+    "players.csv": {
+      "sha256": "c18ecc750880f2d969a252ed4e8e8febbe155498e83be39a528bfc8970515029",
+      "rozmiar_mb": 16.33,
+      "zmodyfikowany": "2026-08-18T20:35:22+00:00"
+    },
+    "player_valuations.csv": {
+      "sha256": "d03f484fd0d3ffc7217d4e73e1b4c57bafb3beb6b8d97f5df307f4a3fe5f9ca0",
+      "rozmiar_mb": 23.54,
+      "zmodyfikowany": "2026-08-18T20:35:23+00:00"
+    }
+  },
+  "parametry": {
+    "DZIEN_ODNIESIENIA": "-06-30",
+    "KATALOG_REPO": ".",
+    "KATALOG_WYJSCIA": "data\\processed",
+    "KLUCZ": [
+      "match_id",
+      "player_id"
+    ],
+    "KLUCZ_SEZON": [
+      "player_id",
+      "season"
+    ],
+    "KODY_AMERYKA_PLD": [
+      "ARG",
+      "BOL",
+      "BRA",
+      "CHI",
+      "COL",
+      "ECU",
+      "PAR",
+      "PER",
+      "URU",
+      "VEN"
+    ],
+    "KODY_EUROPA": [
+      "ALB",
+      "AND",
+      "ARM",
+      "AUT",
+      "AZE",
+      "BEL",
+      "BIH",
+      "BLR",
+      "BUL",
+      "CRO",
+      "CYP",
+      "CZE",
+      "DEN",
+      "ENG",
+      "ESP",
+      "EST",
+      "FIN",
+      "FRA",
+      "FRO",
+      "GEO",
+      "GER",
+      "GIB",
+      "GRE",
+      "HUN",
+      "IRL",
+      "ISL",
+      "ISR",
+      "ITA",
+      "KAZ",
+      "KVX",
+      "LIE",
+      "LTU",
+      "LUX",
+      "LVA",
+      "MDA",
+      "MKD",
+      "MLT",
+      "MNE",
+      "NED",
+      "NIR",
+      "NOR",
+      "POL",
+      "POR",
+      "ROU",
+      "RUS",
+      "SCO",
+      "SMR",
+      "SRB",
+      "SUI",
+      "SVK",
+      "SVN",
+      "SWE",
+      "TUR",
+      "UKR",
+      "WAL"
+    ],
+    "KOLUMNY_NIELICZNIKOWE": [
+      "match_id",
+      "player_id",
+      "season",
+      "competition",
+      "date",
+      "home_away",
+      "squad_number",
+      "start",
+      "nation",
+      "position",
+      "age",
+      "name",
+      "data_urodzenia",
+      "wiek",
+      "kod_kraju",
+      "region",
+      "minutes",
+      "pozycja_mecz",
+      "minuty_sezon",
+      "mecze",
+      "mecze_od_poczatku",
+      "liga",
+      "pozycja",
+      "zmienil_lige"
+    ],
+    "KOLUMNY_ZREDUNDOWANE": {
+      "Summary": [
+        "assists",
+        "blocks",
+        "carries",
+        "interceptions",
+        "progressive_carries",
+        "progressive_passes",
+        "red_cards",
+        "tackles",
+        "yellow_cards",
+        "touches",
+        "passes_completed",
+        "passes_attempted",
+        "pass_completion_percentage",
+        "successful_dribbles",
+        "dribbles_attempted",
+        "xA"
+      ],
+      "Pass_Types": [
+        "passes_completed",
+        "passes_attempted"
+      ],
+      "Miscellaneous": [
+        "crosses",
+        "interceptions",
+        "tackles_won"
+      ]
+    },
+    "KOLUMNY_Z_MATCH": [
+      "match_id",
+      "competition",
+      "season",
+      "date"
+    ],
+    "LIGA_ZBIOR_C": "Primeira_Liga",
+    "MAPA_POZYCJI": {
+      "CB": "DEF",
+      "LB": "DEF",
+      "RB": "DEF",
+      "WB": "DEF",
+      "DM": "MID",
+      "CM": "MID",
+      "LM": "MID",
+      "RM": "MID",
+      "AM": "MID",
+      "LW": "FOR",
+      "RW": "FOR",
+      "FW": "FOR"
+    },
+    "MAX_ROZNICA_DAT_DNI": 7,
+    "MIN_MINUT": 225,
+    "MIN_OBSERWACJI_KOMORKA": 20,
+    "OKNO_WYCENY_DO": "-09-30",
+    "OKNO_WYCENY_OD": "-04-01",
+    "PRZEDZIALY_WIEKU": [
+      0,
+      20,
+      22,
+      24,
+      26,
+      28,
+      30,
+      32,
+      99
+    ],
+    "SCIEZKA_DB": "data\\raw\\fbref\\master.db",
+    "SCIEZKA_TM": "data\\raw\\tm",
+    "SEZONY": [
+      "2017-2018",
+      "2018-2019",
+      "2020-2021",
+      "2021-2022",
+      "2022-2023",
+      "2023-2024"
+    ],
+    "SEZONY_KALIBRACJA": [
+      "2022-2023"
+    ],
+    "SEZONY_TEST": [
+      "2023-2024"
+    ],
+    "SEZONY_TRENING": [
+      "2017-2018",
+      "2018-2019",
+      "2020-2021",
+      "2021-2022"
+    ],
+    "TABELE_POLOWE": [
+      "Summary",
+      "Passing",
+      "Possession",
+      "Defensive_Actions",
+      "Pass_Types",
+      "Miscellaneous"
+    ],
+    "WSKAZNIKI_PROCENTOWE": {
+      "completion_percentage": [
+        "total_completed",
+        [
+          "total_attempted"
+        ]
+      ],
+      "short_completion_percentage": [
+        "short_completed",
+        [
+          "short_attempted"
+        ]
+      ],
+      "med_completion_percentage": [
+        "med_completed",
+        [
+          "med_attempted"
+        ]
+      ],
+      "long_completion_percentage": [
+        "long_completed",
+        [
+          "long_attempted"
+        ]
+      ],
+      "dribble_success_percentage": [
+        "successful_dribbles",
+        [
+          "dribbles_attempted"
+        ]
+      ],
+      "tackled_perecentage": [
+        "tackled",
+        [
+          "dribbles_attempted"
+        ]
+      ],
+      "successful_dribbler_tackle_percentage": [
+        "dribblers_tackled",
+        [
+          "attempted_tackles_vs_dribblers"
+        ]
+      ],
+      "aerials_won_percentage": [
+        "aerials_won",
+        [
+          "aerials_won",
+          "aerials_lost"
+        ]
+      ]
+    },
+    "ZMIANY_NAZW": {
+      "Pass_Types": {
+        "offsides": "offsides_z_podan"
+      }
+    }
+  },
+  "wiersze_po_etapach": {
+    "etap_1_wystepy_w_zrodle": 521259,
+    "etap_2_polaczone": 521259,
+    "etap_3_po_parsowaniu": 342121,
+    "etap_4_pary_sezonowe": 14080,
+    "etap_5_po_normalizacji": 14080,
+    "etap_6_po_crosswalku": 13761,
+    "etap_7_z_wycena": 13709,
+    "etap_9_koncowe": 13709,
+    "etap_10_zbior_modelowy": 13709
+  },
+  "pliki_wyjsciowe": {
+    "zawodnik_sezon.parquet": {
+      "sha256": "dd569fb2df63883f6c8515b8085d2e6cc0c11668d0db72b38659c9e3a5566ddb",
+      "rozmiar_mb": 10.42,
+      "zmodyfikowany": "2026-08-27T11:33:53+00:00"
+    },
+    "model.parquet": {
+      "sha256": "0703e0cf2029eb65f11217e2ba62dec853b6d7f435c3e2c890fbb53c30be5aa5",
+      "rozmiar_mb": 8.9,
+      "zmodyfikowany": "2026-08-27T11:33:53+00:00"
+    }
+  },
+  "prowieniencja_fbref": {
+    "wzor_adresu": "https://fbref.com/en/matches/{match_id}/",
+    "scrape_od": "2023-02-14T18:20:52",
+    "scrape_do": "2026-01-17T00:12:52",
+    "stron_lacznie": 17551,
+    "zgodnosc_z_baza": true
+  }
+}

@@ -2,17 +2,12 @@
 
 Wersja 1.1, 2026-08-27
 
-Otwierasz ten plik, żeby wiedzieć, gdzie jesteś i co dalej. Wnioski z zakończonych
-etapów zostają tutaj — to jest pamięć projektu.
-
-Statusy: `[x]` zrobione, `[~]` w trakcie, `[ ]` nierozpoczęte.
-
 ## Mapa drogowa
 
 | etap | zakres | status |
 |---|---|---|
 | E1 | pipeline danych | `[x]` |
-| E2 | porządki: manifest, testy, importy | `[ ]` |
+| E2 | porządki: manifest, testy, importy | `[x]` |
 | E3 | analiza eksploracyjna | `[ ]` |
 | E4 | protokół walidacji i poziom odniesienia | `[ ]` |
 | E5 | modele M1–M3, wymiar W1 | `[ ]` |
@@ -38,7 +33,7 @@ Narzędzia: sqlite3, pandas 3.0, numpy, pyarrow, uv, ruff, Python 3.12.
 
 ### Wnioski
 
-Parametr `validate=` w merge nie kosztuje nic i wykrywa klasę błędów, które inaczej
+Parametr `validate=` w merge jest darmowy i wykrywa klasę błędów, które inaczej
 ujawniają się dopiero jako niewytłumaczalne wyniki modelu. Poprzednia wersja
 pipeline'u łączyła po nazwisku bez walidacji i miała 846 zduplikowanych par
 zawodnik-sezon.
@@ -56,50 +51,69 @@ Mediana jest złym estymatorem środka komórki, gdy źródło raportuje wartoś
 w okrągłych progach — skacze między progami i daje „inflację" rzędu 60 procent tam,
 gdzie rynek ledwie drgnął. Użyliśmy średniej z logarytmu wartości.
 
-Braki w kolumnach procentowych są strukturalne (mianownik równy zeru), nie przypadkowe.
+Braki w kolumnach procentowych są strukturalne: mianownik równy zeru.
 Po agregacji sezonowej spadają z około 50 procent do około 2 procent i wtedy są
-informacją, a nie brakiem do imputacji.
+informacją samą w sobie.
 
-Filtr minimalnych minut jest konieczny, ale usuwa dane nielosowo: wypadają młodzi,
+Filtr minimalnych minut jest konieczny, ale usuwa dane systematycznie: wypadają młodzi,
 rezerwowi i kontuzjowani, czyli systematycznie tańsi.
 
 ## E2 — porządki
 
-Status: nierozpoczęte. Blokujący. Szacunek: jeden do dwóch dni.
+Status: zrobione.
 
 Celem jest zamknięcie długu, który przy obronie wyjdzie jako pierwszy w pracy
 o odtwarzalności.
 
-- `[ ]` `manifest.json` w etapie 10: SHA-256 każdego pliku wejściowego, wersje pandas,
+- `[x]` `manifest.json` w etapie 10: SHA-256 każdego pliku wejściowego, wersje pandas,
   numpy i Pythona, data uruchomienia, wszystkie parametry z `parametry.py`, liczby
   wierszy po każdym etapie. To pierwszy realny kawałek W6 i kosztuje pół godziny.
 - `[x]` kolumna `znany_z_treningu` w etapie 8 (D-12). Bez niej każda stratyfikacja
   wymagałaby przeliczania w każdym notatniku osobno.
-- `[ ]` `tests/test_dane.py` — przenieść asercje ze skryptu do pytest. Dziś sprawdzenia
+- `[x]` `tests/test_dane.py` — przenieść asercje ze skryptu do pytest. Dziś sprawdzenia
   odpalają się tylko przy pełnym przebiegu pipeline'u, czyli po dwudziestu minutach.
   Test czytający `model.parquet` biegnie w sekundę i wykryje, że plik został
   podmieniony. Zakres: unikalność klucza, brak Primeira Liga w treningu i kalibracji,
   minuty powyżej progu, wskaźniki w zakresie od zera do stu albo NaN, rozłączność par
   między zbiorami, oczekiwane kształty i liczebności.
-- `[ ]` naprawić importy. Moduły robią `from parametry import ...`, więc działają tylko
+- `[x]` naprawić importy. Moduły robią `from parametry import ...`, więc działają tylko
   z konkretnego katalogu roboczego — dokładnie ta klasa błędów, przed którą miał
   chronić layout `src` (D-19).
-- `[ ]` `README.md` — jak odtworzyć zbiór, jak odpalić testy.
-- `[ ]` pre-commit: `ruff format`, `ruff check`, `nbstripout`.
+- `[x]` `README.md` — jak odtworzyć zbiór, jak odpalić testy.
+- `[x]` pre-commit: `ruff format`, `ruff check`, `nbstripout`.
+
+### Wnioski
+
+Prowieniencja `master.db` była odzyskiwalna, mimo że baza przychodzi bez metadanych. Archiwa
+ZIP obok niej zawierają 17 551 surowych stron FBref z adresem kanonicznym w nagłówku
+i datą pobrania w metadanych pliku. Liczba stron zgadza się co do jednej z liczbą
+meczów w bazie, w obie strony. Audyt: `scripts/audyt_zrodel.py`, wynik
+w `docs/zrodla_fbref.json`, streszczenie w manifeście.
+
+Przy okazji rozstrzygnięte O-2: Primeira Liga zaczyna się w źródle od sezonu 2018-2019,
+bo została doscrapowana rok później niż Big 5 (od 2024-11-08).
+
+Testy czytające gotowy `model.parquet` biegną 1,1 s wobec 40 s pełnego przebiegu
+pipeline'u. Siedemnaście sprawdzeń, w tym rozłączność par między zbiorami i zgodność
+flagi `znany_z_treningu` z faktycznym składem.
+
+`pre-commit install` odmawia działania, gdy ustawione jest `core.hooksPath` — a jest,
+globalnie, dla własnego hooka `commit-msg`. Rozwiązanie: lokalny `core.hooksPath`
+wskazujący `.git/hooks`, kopia `commit-msg` na miejscu i hook `pre-commit` napisany
+ręcznie. Konfiguracja globalna nietknięta, inne repozytoria działają jak dotąd.
 
 ## E3 — analiza eksploracyjna
 
 Status: nierozpoczęte. Szacunek: trzy do pięciu dni.
 
 Celem jest odpowiedzenie na pytania, których odpowiedzi zmienią decyzje w E4 i E5.
-Nie „zrobienie wykresów".
 
 - `[ ]` rozkład celu: nominalny, logarytmiczny, zdeflowany. Weryfikacja symetrii
   po `log1p`.
 - `[ ]` skuteczność deflacji: czy po zdeflowaniu mediana realna jest płaska w czasie.
-  Jeśli nie, indeks jest źle policzony.
+  Odchylenie od płaskiej wskazuje błąd w liczeniu indeksu.
 - `[ ]` krzywa wiek-wartość. Weryfikacja kształtu odwróconego U, czyli uzasadnienia
-  dla cechy `wiek_do_kw`. Jeśli kształt nie jest paraboliczny, ta cecha jest ozdobnikiem
+  dla cechy `wiek_do_kw`. Kształt inny niż paraboliczny czyni tę cechę ozdobnikiem
   i trzeba to napisać.
 - `[ ]` struktura panelu: ilu zawodników w ilu sezonach, jak długi jest ogon
   jednosezonowy. Wejście do GroupKFold w E4.
@@ -124,7 +138,7 @@ Narzędzia: matplotlib, seaborn, scipy, statsmodels. Artefakty: `notebooks/01-ed
 
 Status: nierozpoczęte. Szacunek: dwa do trzech dni. Najważniejszy metodologicznie.
 
-Celem jest ustalenie raz zasad oceny i nigdy ich nie zmienianie. Zmiana protokołu
+Celem jest ustalenie zasad oceny raz i trzymanie się ich do końca. Zmiana protokołu
 po zobaczeniu wyników to najcichszy sposób na oszukanie samego siebie.
 
 - `[ ]` `configs/split.yaml` — podział zamrożony, z hashem `model.parquet`.
@@ -163,8 +177,8 @@ Status: nierozpoczęte. Szacunek: cztery do sześciu dni.
 - `[ ]` MLflow: każdy przebieg z hashem danych i configu.
 - `[ ]` analiza reszt: heteroskedastyczność, regresja do średniej w ogonach, odchylenia
   per liga i pozycja.
-- `[ ]` porównanie celu nominalnego i zdeflowanego (D-04). Hipoteza: drzewa nie zyskają,
-  modele liniowe mogą.
+- `[ ]` porównanie celu nominalnego i zdeflowanego (D-04). Hipoteza: zysk pojawi się
+  u modeli liniowych, drzewa zostaną na swoim poziomie.
 - `[ ]` test jednostkowy na pułapkę `drop="first"` z D-10.
 
 Artefakty: `src/trustml/models/`, `models/*.joblib`, `mlruns/`,
@@ -185,13 +199,13 @@ ujednolicić.
 - `[ ]` testy jednostkowe, pokrycie powyżej 70 procent.
 - `[ ]` CI na GitHub Actions: ruff i pytest przy każdym pushu.
 - `[ ]` rozstrzygnąć, czym `trustml` różni się od deepchecks, giskard, evidently
-  i fairlearn. Przez lekturę ich dokumentacji, nie przez zgadywanie. Bez odpowiedzi
+  i fairlearn. Przez lekturę ich dokumentacji. Bez odpowiedzi
   wkład pracy jest podważalny na obronie.
 
 ## E7 — odporność, wymiar W2
 
 - `[ ]` rolling origin: trenuj na sezonach do t, testuj na t+1, przesuwaj t. Wynikiem
-  jest krzywa degradacji w czasie, nie pojedynczy punkt. Uwaga na lukę kalendarzową
+  jest krzywa degradacji w czasie. Uwaga na lukę kalendarzową
   między 2018-2019 a 2020-2021 (D-08).
 - `[ ]` szum gaussowski o sigma 1, 5 i 10 procent na cechach `_p90`.
 - `[ ]` maskowanie 5 i 10 procent losowych cech z imputacją z treningu.
@@ -233,12 +247,12 @@ efekt.
 - `[ ]` parytet jakości (różnica RMSLE i MdAPE) oraz parytet obciążenia (średnia
   reszty) — dwa niezależne pomiary.
 - `[ ]` coverage gap, czyli różnica pokrycia konforemnego między grupami. Spina W3 z W5.
-- `[ ]` bootstrap na istotność różnic międzygrupowych, nie same wartości punktowe.
+- `[ ]` bootstrap na istotność różnic międzygrupowych, obok wartości punktowych.
 - `[ ]` analiza źródła obciążenia: czy luka pochodzi z modelu, czy jest odziedziczona
   po wycenach Transfermarkt.
 - `[ ]` `evaluation/fairness.py`.
 
-Język opisu: mierzymy obciążenie wycen, nie stwierdzamy dyskryminacji zawodników.
+Język opisu: mierzymy obciążenie wycen. Wnioski formułujemy o rynku i jego wycenach.
 
 ## E11 — przesunięcie dziedziny: Primeira Liga
 
@@ -247,8 +261,8 @@ Jeden eksperyment, w którym wszystkie wymiary są mierzone naraz.
 - `[ ]` zmierzyć wielkość przesunięcia cech: PSI i test Kołmogorowa-Smirnowa. Można
   wcześniej (D-14).
 - `[ ]` pełny `TrustReport` dla wszystkich modeli, w wariantach z ligą i bez (D-11).
-- `[ ]` rozkład degradacji na obciążenie kierunkowe i rozrzut (D-13). Obowiązkowo,
-  inaczej wynik nie znaczy nic.
+- `[ ]` rozkład degradacji na obciążenie kierunkowe i rozrzut (D-13). Obowiązkowo —
+  od tego zależy wymowa wyniku.
 - `[ ]` porównanie główne na podzbiorach „nowi vs nowi" (D-12); wersja „całość vs
   całość" raportowana obok.
 - `[ ]` wariant z rekalibracją przesunięcia na małej próbce ze zbioru C.
@@ -257,7 +271,7 @@ Jeden eksperyment, w którym wszystkie wymiary są mierzone naraz.
 - `[ ]` analiza: które wymiary degradują pierwsze i najmocniej.
 
 Rozszerzenie: drabinka lig, od 0,8 mln euro w Primeira Lidze po 15 mln w Premier
-League, pozwala zbudować krzywą dawka-odpowiedź zamiast testu binarnego.
+League, pozwala zbudować krzywą dawka-odpowiedź o kilku punktach pomiarowych.
 
 ## E12 — trustml 1.0 i synteza
 
@@ -280,11 +294,13 @@ O-1. Czy jeden sezon testowy, czyli 1 957 par, wystarczy jako główny wynik, cz
 na rolling origin już w E4. Koszt: mniej danych treningowych w każdym oknie. Zysk:
 krzywa zamiast punktu i odporniejszy wynik główny. Termin: przed E4.
 
-O-2. Zbiór C nie zawiera sezonu 2017-2018. Brak w źródle czy skutek filtrów. Wpływ
-na E11 prawdopodobnie żaden, ale trzeba wiedzieć. Termin: przy E3.
+O-2. ~~Zbiór C zaczyna się dopiero od sezonu 2018-2019.~~ Rozstrzygnięte 2026-08-27
+audytem archiwów: granica pochodzi ze źródła. Primeira Liga była scrapowana rok
+później niż Big 5 (od 2024-11-08) i tylko od sezonu 2018-2019. Konsekwencja dla E11:
+zbiór C obejmuje o rok krótszą historię niż trening.
 
 O-3. Czy wskaźniki procentowe z brakiem strukturalnym powinny dostać flagę
-„nie próbował" obok imputacji, czy samą imputację (D-09). Termin: przy budowie Pipeline
+„zero prób" obok imputacji, czy samą imputację (D-09). Termin: przy budowie Pipeline
 w E5.
 
 O-4. Czym `trustml` różni się od deepchecks, giskard, evidently i fairlearn.

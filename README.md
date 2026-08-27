@@ -6,12 +6,9 @@ Biblioteka przyjmuje dowolny model zgodny z API scikit-learn i produkuje
 wystandaryzowany raport w sześciu wymiarach: poprawność predykcyjna (W1), odporność
 (W2), niepewność (W3), wyjaśnialność (W4), sprawiedliwość (W5) i odtwarzalność (W6).
 
-Praca magisterska, AGH. Predykcja wartości rynkowej piłkarzy w `case_study/` jest
-przykładem demonstracyjnym, nie celem samym w sobie.
-
 ## Struktura
 
-- `src/trustml/` — biblioteka; nie wie, że istnieje piłka nożna
+- `src/trustml/` — biblioteka, niezależna od dziedziny
 - `case_study/football/` — pipeline danych dziedzinowych
 - `data/raw/` — źródła, tylko do odczytu, poza gitem (około 2,4 GB)
 - `data/processed/` — zbiór modelowy
@@ -31,13 +28,13 @@ Python 3.12 lub nowszy. Zależności w `pyproject.toml`, zamrożone w `uv.lock`.
 
 Wymaga `data/raw/fbref/master.db` (221 MB) oraz `data/raw/tm/players.csv`
 i `data/raw/tm/player_valuations.csv` ze zbioru Kaggle `davidcariboo/player-scores`.
-Dane nie są wersjonowane w repozytorium.
+Dane leżą poza repozytorium.
 
 ```
-python case_study/football/przygotuj_dane.py
+python -m case_study.football.przygotuj_dane
 ```
 
-Przebieg trwa około dwudziestu minut. Wynik trafia do `data/processed/`:
+Wynik trafia do `data/processed/`:
 `zawodnik_sezon.parquet` jako pełny zbiór kontrolny, `model.parquet` jako zbiór
 modelowy o wymiarach 13 709 na 114, oraz `manifest.json` z prowieniencją — sumami
 kontrolnymi, wersjami i parametrami.
@@ -60,11 +57,7 @@ ruff format
 - `docs/03-decyzje.md` — log decyzji projektowych
 - `docs/04-plan.md` — mapa drogowa i status
 
-Zacznij od `docs/01-projekt.md`.
-
 ## Źródła danych
 
 FBref dostarcza statystyki mecz po meczu, a Transfermarkt — przez zbiór Kaggle
-`davidcariboo/player-scores` — wyceny i cechy statyczne. Zbiór zawiera dane osobowe
-realnych osób, publiczne i dotyczące działalności zawodowej. Licencje do sprawdzenia
-przed złożeniem pracy, szczegóły w `docs/02-dane.md`.
+`davidcariboo/player-scores` — wyceny i cechy statyczne.

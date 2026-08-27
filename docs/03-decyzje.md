@@ -2,8 +2,8 @@
 
 Wersja 1.1, 2026-08-27
 
-Format uproszczonego ADR: kontekst, decyzja, uzasadnienie, konsekwencje. Wpisów nie
-usuwamy. Jeśli decyzja się zmienia, dodajemy nowy wpis z adnotacją, który zastępuje.
+Format uproszczonego ADR: kontekst, decyzja, uzasadnienie, konsekwencje. Wpisy zostają
+na stałe. Jeśli decyzja się zmienia, dodajemy nowy wpis z adnotacją, który zastępuje.
 
 Log zaczyna się od nowa wraz z przepisaniem pipeline'u danych w sierpniu 2026.
 Poprzedni dziennik dotyczył innego pipeline'u i został wycofany; decyzje, które nadal
@@ -11,7 +11,7 @@ obowiązują, są tu przepisane pod nowymi numerami.
 
 Statusy: przyjęta, otwarta, warunkowa, zastąpiona.
 
-## D-01 — framework ewaluacji, nie porównanie modeli
+## D-01 — obiektem pracy jest framework ewaluacji
 
 Status: przyjęta
 
@@ -22,7 +22,7 @@ Obiektem pracy jest procedura ewaluacji wiarygodności; modele są jej przypadka
 testowymi, a dane piłkarskie przykładem demonstracyjnym.
 
 Konsekwencja: głównym wynikiem jest macierz model × wymiar i analiza rozbieżności
-rankingów przez tau Kendalla, nie tabela z R². Więcej pracy idzie w ewaluację niż
+rankingów przez tau Kendalla. Więcej pracy idzie w ewaluację niż
 w modelowanie i taki jest zamierzony rozkład wysiłku.
 
 ## D-02 — sześć wymiarów wiarygodności
@@ -34,8 +34,8 @@ W6 odtwarzalność. Operacjonalizacja w `01-projekt.md`.
 
 Wymiary pokrywają mierzalną ilościowo część wymogów HLEG i NIST AI RMF, a każdy da
 się zoperacjonalizować na zadaniu regresyjnym. Pominęliśmy wymogi HLEG dotyczące
-prywatności, bezpieczeństwa i nadzoru człowieka — nie są mierzalne w tym zadaniu
-i rozmyłyby zakres pracy.
+prywatności, bezpieczeństwa i nadzoru człowieka — wymykają się pomiarowi w tym
+zadaniu i rozmyłyby zakres pracy.
 
 Konsekwencja porządkowa: przy każdym użyciu oznaczenia W1–W6 dopisujemy, jaka metryka
 za nim stoi. Obowiązuje w rozmowie, kodzie i dokumentacji.
@@ -49,7 +49,7 @@ staje się praktycznie symetryczny.
 
 Konsekwencja: metryki liczymy na skali logarytmicznej, przede wszystkim RMSLE. Przy
 raportowaniu w euro konieczna jest korekta Duana albo jawna deklaracja, że podajemy
-medianę warunkową — `expm1` ze średniej z logarytmów nie jest średnią.
+medianę warunkową — `expm1` ze średniej z logarytmów daje właśnie medianę.
 
 ## D-04 — cel główny nominalny, zdeflowany jako analiza wrażliwości
 
@@ -59,9 +59,9 @@ Inflacja wycen w Big 5 wynosi 38 procent między 2017-2018 a 2023-2024, a poziom
 leży 18,4 procent powyżej treningu. Przy podziale czasowym model powinien więc
 systematycznie zaniżać na teście.
 
-Pomiar tego nie potwierdza. HistGradientBoosting na teście dał MAE 0,5757 z deflacją
-wobec 0,5734 bez niej. Drzewa nie ekstrapolują poza zakres treningu, więc różnica
-poziomów przekłada się na obciążenie słabiej, niż sugeruje porównanie średnich.
+Pomiar wskazuje inaczej. HistGradientBoosting na teście dał MAE 0,5757 z deflacją
+wobec 0,5734 bez niej. Drzewa trzymają się zakresu treningu, więc różnica poziomów
+przekłada się na obciążenie słabiej, niż sugeruje porównanie średnich.
 
 Celem głównym jest `log_market_value` w wersji nominalnej. `market_value_real`
 i `log_market_value_real` zostają w zbiorze jako wariant do analizy wrażliwości.
@@ -76,25 +76,25 @@ do rozpatrzenia.
 Status: przyjęta
 
 Zeszłoroczna wycena wyjaśnia 83,75 procent wariancji celu w skali logarytmicznej.
-Cecha nie wchodzi do zbioru modelowego.
+Cecha zostaje poza zbiorem modelowym.
 
 Powody są dwa. Po pierwsze, zdominowałaby ranking SHAP: byłby jeden pewny zwycięzca
-i szum poniżej, więc tau Kendalla wyszłoby wysokie i nie mierzyłoby niczego, a W4
-stałby się bezprzedmiotowy. Po drugie, cecha nie istnieje dla debiutantów, czyli
-około 28 procent zbioru testowego.
+i szum poniżej, więc tau Kendalla wyszłoby wysokie i mierzyłoby wyłącznie obecność
+tej jednej cechy, a W4 stałby się bezprzedmiotowy. Po drugie, cecha istnieje tylko
+dla zawodników z wcześniejszą wyceną, czyli dla 72 procent zbioru testowego.
 
-Konsekwencja: pytanie badawcze brzmi „które cechy boiskowe budują wartość", a nie
-„jak bardzo wycena jest lepka". To drugie jest znane i nieciekawe.
+Konsekwencja: pytanie badawcze brzmi „które cechy boiskowe budują wartość". Lepkość
+wyceny jest zjawiskiem znanym i opisanym.
 
-## D-06 — baseline „przepisz wycenę z t−1" jako punkt odniesienia, nie próg
+## D-06 — baseline „przepisz wycenę z t−1" jako punkt odniesienia
 
 Status: przyjęta
 
 Baseline daje R² 0,8375 w skali logarytmicznej, MdAPE 30,0 procent i RMSLE 0,524.
-Raportujemy go, ale nie traktujemy jako progu do pobicia.
+Raportujemy go jako punkt odniesienia.
 
-Korzysta z informacji, której modele świadomie nie dostają (D-05), i nie istnieje dla
-około 28 procent zbioru testowego. To inne zadanie z dostępem do innej informacji.
+Korzysta z wyceny celowo odciętej modelom (D-05) i obejmuje 72 procent zbioru
+testowego. To inne zadanie z dostępem do innej informacji.
 
 Konsekwencja raportowania: podajemy dwie liczby — na podzbiorze z dostępnym t−1 oraz
 na pełnym teście z uzupełnieniem medianą grupową tam, gdzie t−1 brakuje. Podawanie
@@ -108,8 +108,8 @@ Statystyki polowe są dla bramkarzy nieinformatywne. Modelowanie ich razem
 z zawodnikami z pola wymagałoby osobnego zestawu cech i osobnego modelu. Tabela
 `Goalkeeper` pozostaje nieużywana.
 
-Koszt: praca nie obejmuje około 10 procent populacji zawodników. Do odnotowania
-w ograniczeniach.
+Koszt: praca obejmuje wyłącznie zawodników z pola, czyli pomija około 10 procent
+populacji. Do odnotowania w ograniczeniach.
 
 ## D-08 — zakres: sześć sezonów, próg 225 minut
 
@@ -126,7 +126,7 @@ od 99,1 do 99,6 procent w każdym sezonie.
 Próg jest konieczny, bo poniżej niego statystyki per 90 minut są szumem: jedno
 podanie w dziesięć minut daje dziewięć podań na dziewięćdziesiąt.
 
-Koszt: próg usuwa około 19 procent par, i to nielosowo — wypadają młodzi, rezerwowi
+Koszt: próg usuwa około 19 procent par, i to systematycznie — wypadają młodzi, rezerwowi
 i kontuzjowani, czyli systematycznie tańsi. Dlatego próg jest stałą w `parametry.py`,
 a analiza wrażliwości dla wartości 0, 225, 450 i 900 jest zaplanowana.
 
@@ -143,10 +143,9 @@ skalowania i selekcji korelacyjnej.
 
 Konsekwencja: każdy kod używający tych plików musi przechodzić przez Pipeline.
 
-Uwaga merytoryczna: braki we wskaźnikach procentowych są strukturalne — zawodnik nie
-próbował danej akcji ani razu przez cały sezon. To jest informacja, nie brak.
-Do rozważenia przy budowie Pipeline: wskaźnik z flagą „nie próbował" zamiast samej
-imputacji.
+Uwaga merytoryczna: braki we wskaźnikach procentowych są strukturalne — zawodnik miał
+przez cały sezon zero prób danej akcji. To jest informacja sama w sobie.
+Do rozważenia przy budowie Pipeline: wskaźnik z flagą „zero prób" obok imputacji.
 
 ## D-10 — kategoryczne jako tekst, OneHotEncoder bez drop
 
@@ -167,15 +166,14 @@ ryzyko rozjechania się zestawu kolumn między zbiorami.
 
 Status: przyjęta
 
-Primeira Liga jest kategorią nieobecną w treningu. Model nie ma fizycznej możliwości
-poznać poziomu cen tej ligi — dostaje ją jako „żadna ze znanych lig".
+Primeira Liga jest kategorią spoza treningu. Poziom cen tej ligi pozostaje dla modelu
+nieznany — dostaje ją jako „żadna ze znanych lig".
 
-Liga zostaje zmienną kategoryczną; nieznana kategoria jest częścią eksperymentu,
-nie błędem. Dodatkowo każdy eksperyment przesunięcia dziedziny uruchamiamy w dwóch
+Liga zostaje zmienną kategoryczną, a nieznana kategoria jest częścią eksperymentu. Dodatkowo każdy eksperyment przesunięcia dziedziny uruchamiamy w dwóch
 wariantach. Bez ligi mierzymy degradację z samego przesunięcia relacji między cechami
 a celem. Z ligą dokładamy koszt nieznanej kategorii. Różnica izoluje jedno od drugiego.
-Bez tej kontroli nie wiadomo, czy mierzymy przesunięcie dziedziny, czy zachowanie
-enkodera na wektorze spoza rozkładu treningowego.
+Ta kontrola rozstrzyga, czy mierzymy przesunięcie dziedziny, czy zachowanie enkodera
+na wektorze spoza rozkładu treningowego.
 
 Odrzucone: liga jako liczba, na przykład ranking UEFA. Dokładałaby zewnętrzne źródło
 i ryzyko policzenia go na zbiorze testowym.
@@ -185,33 +183,33 @@ i ryzyko policzenia go na zbiorze testowym.
 Status: przyjęta
 
 Podział jest czasowy, więc ten sam zawodnik występuje w wielu zbiorach w różnych
-sezonach. Pary są rozłączne, więc formalnie wycieku nie ma, ale model rozpoznaje
+sezonach. Pary są rozłączne, więc formalnie podział jest czysty, ale model rozpoznaje
 zawodnika po kombinacji wzrostu, wieku, pozycji i profilu statystycznego, mimo że
-`player_id` nie jest cechą.
+`player_id` zostaje poza cechami.
 
 Pomiar na HistGradientBoosting: na teście znani mają R² 0,68 wobec 0,56 dla nowych,
 przy udziale znanych 66 procent. W zbiorze C znani mają 0,51 wobec −0,50 dla nowych,
-przy udziale znanych 9 procent. Przewaga zostaje po wyrównaniu wieku grup, więc nie
-jest artefaktem składu.
+przy udziale znanych 9 procent. Przewaga zostaje po wyrównaniu wieku grup, więc bierze
+się z samej znajomości zawodnika.
 
-Podziału nie zmieniamy, bo w praktyce wycenia się zawodników, których rynek już zna.
-Zamiast tego robimy trzy rzeczy. Etap 8 zapisuje kolumnę `znany_z_treningu`
+Podział zostaje taki, jaki jest, bo w praktyce wycenia się zawodników, których rynek
+już zna. Wynikają z tego trzy obowiązki. Etap 8 zapisuje kolumnę `znany_z_treningu`
 w `model.parquet`. Każda metryka W1–W5 raportowana jest w trzech wariantach: całość,
 znani, nowi. Porównanie testu ze zbiorem C w eksperymencie przesunięcia dziedziny
 robimy na podzbiorach „nowi vs nowi", a wersja „całość vs całość" leci obok, jako
 miara tego, ile z pozornej degradacji brało się ze składu próby.
 
 Przy udziale znanych 66 procent wobec 9 procent porównanie jednej liczby na całym
-teście z jedną liczbą na całym zbiorze C mierzy w dużej części różnicę składu, a nie
-odporność modelu. Jest to najważniejszy eksperyment pracy, więc to nie jest analiza
-dodatkowa, tylko warunek poprawności głównego wyniku.
+teście z jedną liczbą na całym zbiorze C mierzy w dużej części różnicę składu. Jest to
+najważniejszy eksperyment pracy, więc stratyfikacja jest warunkiem poprawności
+głównego wyniku.
 
 ## D-13 — rozkład degradacji na obciążenie i rozrzut
 
 Status: przyjęta
 
 Mediana wartości w Primeira Lidze wynosi 0,8 mln euro wobec 5,0 mln w Big 5. Jest to
-fakt o poziomie sportowym i sile finansowej ligi, znany z góry, a nie anomalia. Model
+fakt o poziomie sportowym i sile finansowej ligi, znany z góry. Model
 trenowany na Big 5 będzie więc systematycznie i mocno zawyżał, niezależnie od tego,
 jak dobrze rozumie grę — tym bardziej że Primeira Liga jest dla enkodera kategorią
 nieznaną (D-11).
@@ -231,7 +229,7 @@ rynku — odróżnia lepszego zawodnika od gorszego.
 Raportowanie samego RMSLE zmierzyłoby głównie fakt, że w Portugalii płacą mniej,
 i nazwało go spadkiem odporności modelu. Dopiero rozrzut mówi cokolwiek o zdolnościach
 modelu. Obie liczby mają też różne recepty: poziom naprawia się kilkunastoma etykietami
-z nowej dziedziny, rozrzutu nie naprawi nic poza przetrenowaniem.
+z nowej dziedziny, a rozrzut wymaga ponownego treningu.
 
 Rozszerzenie: warto zmierzyć wariant z rekalibracją przesunięcia na małej próbce
 ze zbioru C i porównać go z wariantem bez rekalibracji. To daje praktyczną odpowiedź,
@@ -253,15 +251,15 @@ tylko w eksperymencie końcowym — żadnego trenowania, strojenia, selekcji ani
 metryki na tych danych.
 
 Rozróżnienie jest merytorycznie uzasadnione i da się go obronić, w odróżnieniu
-od reguły, którą już raz złamano. Wiedza o poziomie wycen w Portugalii nie daje
-przewagi w modelowaniu, bo żaden model nie jest na tym zbiorze strojony; jest natomiast
+od reguły, którą już raz złamano. Wiedza o poziomie wycen w Portugalii zostaje bez
+wpływu na modelowanie, bo strojenie odbywa się wyłącznie poza tym zbiorem; jest natomiast
 przesłanką dla D-13, która poprawia jakość eksperymentu.
 
 Zapisany fakt: przesunięcie w zbiorze C to w dominującej części przesunięcie poziomu
 zmiennej celu, około 1,64 do 1,76 jednostki logarytmicznej, czyli około 1,3 odchylenia
-standardowego. Nie jest to przesunięcie rozkładu cech — te są parytetowe, kolumny
-licznikowe mają zero procent braków, a średnie xG wynoszą od 0,080 do 0,098 wobec
-0,077 do 0,113 w Big 5.
+standardowego. Rozkłady cech pozostają przy tym parytetowe: kolumny licznikowe mają
+zero procent braków, a średnie xG wynoszą od 0,080 do 0,098 wobec 0,077 do 0,113
+w Big 5.
 
 ## D-15 — metryki główne: RMSLE i MdAPE
 
@@ -272,7 +270,7 @@ z wcześniejszymi podejściami, z jawną adnotacją o wadliwości.
 
 MAPE dzieli przez wartość rzeczywistą, więc na skośnym rozkładzie mierzy głównie
 zachowanie modelu na tanich zawodnikach. Jest też asymetryczna: zaniżenie ma sufit
-stu procent, zawyżenie nie ma żadnego, więc model optymalizowany pod MAPE uczy się
+stu procent, zawyżenie jest nieograniczone, więc model optymalizowany pod MAPE uczy się
 systematycznie zaniżać. Pomiar na tej samej predykcji: MdAPE 30,0 procent, MAPE
 41,3 procent.
 
@@ -289,14 +287,14 @@ jest z roku na rok mocno skorelowana. Zbiór kalibracyjny jest wymagany przez W3
 kalibracja predykcji konforemnej na treningu daje zawyżone pokrycie i cały pomiar
 traci sens.
 
-Warunek: Primeira Liga nie może wystąpić w treningu ani kalibracji. Sprawdzane
-asercją w etapie 8 i 10.
+Warunek: Primeira Liga występuje wyłącznie w zbiorze C. Sprawdzane asercją
+w etapie 8 i 10.
 
 Otwarte: jeden sezon testowy to 1 957 par. Czy to wystarczy jako główny wynik, czy
 przejść na rolling origin już w protokole walidacji zamiast dopiero w eksperymentach
 odporności. Patrz pytanie O-1 w `04-plan.md`.
 
-## D-17 — parquet, nie CSV
+## D-17 — parquet jako format zapisu
 
 Status: przyjęta
 
@@ -320,14 +318,14 @@ Warunek dla notatników: `nbstripout` przed commitem, inaczej problem wraca.
 
 Status: przyjęta
 
-`src/trustml/` nie wie, że istnieje piłka nożna. Przyjmuje strukturę problemu: X, y,
+`src/trustml/` zna wyłącznie strukturę problemu: X, y,
 groups, time, domain, sensitive, strata, target\_scale. Specyfika dziedzinowa mieszka
 w `case_study/football/`.
 
 Testem przejścia jest uruchomienie na drugim, niepiłkarskim zbiorze bez zmiany ani
-jednej linii w `src/`. Kandydat: ACSIncome z pakietu folktables. Zbiór nie ma struktury
-grupowej, co jest zaletą testową: biblioteka musi zaraportować, że wyciek grupowy jest
-niemierzalny, zamiast po cichu przejść na podział losowy.
+jednej linii w `src/`. Kandydat: ACSIncome z pakietu folktables. Zbiór jest pozbawiony
+struktury grupowej, co jest zaletą testową: biblioteka ma zaraportować niemierzalność
+wycieku grupowego wprost, zamiast po cichu przejść na podział losowy.
 
 Zasada budowy: moduł pakietu powstaje dopiero po ręcznym wykonaniu odpowiedniego
 eksperymentu. Najpierw zrozum, potem uogólnij. Zabezpiecza przed rozrostem zakresu
@@ -344,5 +342,6 @@ wiersze rozmnażają się przez osiem kolejnych połączeń.
 Deduplikujemy jawnie przed łączeniem, z raportem liczby usuniętych wierszy. Parametr
 `validate=` stosujemy we wszystkich merge, bez wyjątków.
 
-Wniosek ogólny: `validate` nie kosztuje nic i wykrywa klasę błędów, które inaczej
-ujawniają się dopiero jako niewytłumaczalne wyniki modelu. Domyślnie, nie wyjątkowo.
+Wniosek ogólny: `validate` jest darmowy i wykrywa klasę błędów, które inaczej
+ujawniają się dopiero jako niewytłumaczalne wyniki modelu. Stosujemy go domyślnie,
+w każdym merge.
