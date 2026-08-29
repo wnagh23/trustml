@@ -295,3 +295,4 @@ scrapingu i wymagana forma cytowania, oraz licencja zbioru Kaggle
 - `01-projekt.md` — cel pracy, wymiary W1–W6, modele
 - `03-decyzje.md` — log decyzji projektowych
 - `04-plan.md` — mapa drogowa i status
+- `05-eda.md` — analiza eksploracyjna, wnioski i ciekawostki

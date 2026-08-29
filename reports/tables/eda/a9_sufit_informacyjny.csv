@@ -1,0 +1,10 @@
+blok,cech,r2,mae_log
+M0a mediana globalna,0,-0.0321,1.0329
+wiek i kwadrat wieku,2,0.1666,0.9271
++ pozycja i liga,4,0.3047,0.8291
++ region i noga,6,0.3134,0.8207
+"+ wolumen gry (minuty, mecze) i wzrost",9,0.4901,0.7021
++ wszystkie statystyki gry (Ridge),105,0.5819,0.6306
+"to samo, HistGradientBoosting",105,0.7241,0.505
+"same statystyki gry, bez kontekstu",95,0.2041,0.9034
+sam wolumen gry,2,0.1562,0.9257

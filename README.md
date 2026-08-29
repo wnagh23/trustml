@@ -13,6 +13,7 @@ wystandaryzowany raport w sześciu wymiarach: poprawność predykcyjna (W1), odp
 - `data/raw/` — źródła, tylko do odczytu, poza gitem (około 2,4 GB)
 - `data/processed/` — zbiór modelowy
 - `docs/` — dokumentacja
+- `reports/` — figury i tabele wynikowe
 - `tests/` — testy
 
 ## Środowisko
@@ -42,6 +43,17 @@ kontrolnymi, wersjami i parametrami.
 Parametry przebiegu, czyli progi, sezony i ścieżki, siedzą
 w `case_study/football/parametry.py`.
 
+## Analiza eksploracyjna
+
+```
+python -m case_study.football.uruchom_eda
+```
+
+Przebieg trwa około dziesięciu sekund i czyta wyłącznie `data/processed/`. Zapisuje
+figury do `reports/figures/eda/`, tabele do `reports/tables/eda/` oraz
+`reports/tables/eda/fakty.json` z kompletem zmierzonych liczb. Omówienie wyników
+znajduje się w `docs/05-eda.md`.
+
 ## Testy
 
 ```
@@ -56,6 +68,7 @@ ruff format
 - `docs/02-dane.md` — źródła, pipeline, słownik zbioru, ograniczenia
 - `docs/03-decyzje.md` — log decyzji projektowych
 - `docs/04-plan.md` — mapa drogowa i status
+- `docs/05-eda.md` — analiza eksploracyjna, wnioski i ciekawostki
 
 ## Źródła danych
 

@@ -19,3 +19,11 @@ data/processed/*.csv
 
 # Migawki posrednich etapow do ogladania w Data Wrangler
 data/podglad/
+
+# Wyniki analiz sa czescia repozytorium. Raport docs/05-eda.md osadza
+# figury z reports/figures/, wiec bez tego katalogu odnosniki w raporcie
+# beda martwe dla kazdego, kto sklonuje repo. Negacja stoi na koncu pliku,
+# bo git bierze pod uwage ostatnia pasujaca regule: dzieki temu reports/
+# przetrwa dodanie szerokiego wzorca w rodzaju *.png czy *.csv wyzej.
+!reports/
+!reports/**

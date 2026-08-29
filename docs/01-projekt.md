@@ -272,3 +272,4 @@ Notatniki służą wyłącznie eksploracji i prezentacji. Logika mieszka w modu�
 - `02-dane.md` — źródła, pipeline, słownik zbioru, ograniczenia
 - `03-decyzje.md` — log decyzji projektowych
 - `04-plan.md` — mapa drogowa i status
+- `05-eda.md` — analiza eksploracyjna, wnioski i ciekawostki

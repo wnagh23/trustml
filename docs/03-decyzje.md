@@ -345,3 +345,10 @@ Deduplikujemy jawnie przed łączeniem, z raportem liczby usuniętych wierszy. P
 Wniosek ogólny: `validate` jest darmowy i wykrywa klasę błędów, które inaczej
 ujawniają się dopiero jako niewytłumaczalne wyniki modelu. Stosujemy go domyślnie,
 w każdym merge.
+
+## Powiązane dokumenty
+
+- `01-projekt.md` — cel pracy, wymiary W1–W6, modele
+- `02-dane.md` — źródła, pipeline, słownik zbioru, ograniczenia
+- `04-plan.md` — mapa drogowa i status
+- `05-eda.md` — analiza eksploracyjna, wnioski i ciekawostki

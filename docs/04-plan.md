@@ -8,7 +8,7 @@ Wersja 1.1, 2026-08-27
 |---|---|---|
 | E1 | pipeline danych | `[x]` |
 | E2 | porządki: manifest, testy, importy | `[x]` |
-| E3 | analiza eksploracyjna | `[ ]` |
+| E3 | analiza eksploracyjna | `[x]` |
 | E4 | protokół walidacji i poziom odniesienia | `[ ]` |
 | E5 | modele M1–M3, wymiar W1 | `[ ]` |
 | E6 | trustml 0.1: szkielet, W1, W6 | `[ ]` |
@@ -62,8 +62,6 @@ rezerwowi i kontuzjowani, czyli systematycznie tańsi.
 
 Status: zrobione.
 
-Celem jest zamknięcie długu, który przy obronie wyjdzie jako pierwszy w pracy
-o odtwarzalności.
 
 - `[x]` `manifest.json` w etapie 10: SHA-256 każdego pliku wejściowego, wersje pandas,
   numpy i Pythona, data uruchomienia, wszystkie parametry z `parametry.py`, liczby
@@ -97,42 +95,102 @@ Testy czytające gotowy `model.parquet` biegną 1,1 s wobec 40 s pełnego przebi
 pipeline'u. Siedemnaście sprawdzeń, w tym rozłączność par między zbiorami i zgodność
 flagi `znany_z_treningu` z faktycznym składem.
 
-`pre-commit install` odmawia działania, gdy ustawione jest `core.hooksPath` — a jest,
-globalnie, dla własnego hooka `commit-msg`. Rozwiązanie: lokalny `core.hooksPath`
-wskazujący `.git/hooks`, kopia `commit-msg` na miejscu i hook `pre-commit` napisany
-ręcznie. Konfiguracja globalna nietknięta, inne repozytoria działają jak dotąd.
 
 ## E3 — analiza eksploracyjna
 
-Status: nierozpoczęte. Szacunek: trzy do pięciu dni.
+Status: zrobione.
 
-Celem jest odpowiedzenie na pytania, których odpowiedzi zmienią decyzje w E4 i E5.
+Celem było odpowiedzenie na pytania, których odpowiedzi zmienią decyzje w E4 i E5.
 
-- `[ ]` rozkład celu: nominalny, logarytmiczny, zdeflowany. Weryfikacja symetrii
+- `[x]` rozkład celu: nominalny, logarytmiczny, zdeflowany. Weryfikacja symetrii
   po `log1p`.
-- `[ ]` skuteczność deflacji: czy po zdeflowaniu mediana realna jest płaska w czasie.
+- `[x]` skuteczność deflacji: czy po zdeflowaniu mediana realna jest płaska w czasie.
   Odchylenie od płaskiej wskazuje błąd w liczeniu indeksu.
-- `[ ]` krzywa wiek-wartość. Weryfikacja kształtu odwróconego U, czyli uzasadnienia
+- `[x]` krzywa wiek-wartość. Weryfikacja kształtu odwróconego U, czyli uzasadnienia
   dla cechy `wiek_do_kw`. Kształt inny niż paraboliczny czyni tę cechę ozdobnikiem
   i trzeba to napisać.
-- `[ ]` struktura panelu: ilu zawodników w ilu sezonach, jak długi jest ogon
+- `[x]` struktura panelu: ilu zawodników w ilu sezonach, jak długi jest ogon
   jednosezonowy. Wejście do GroupKFold w E4.
-- `[ ]` rozkład celu i cech w podgrupach: pozycja, liga, region, wiek. Wstępna diagnoza
+- `[x]` rozkład celu i cech w podgrupach: pozycja, liga, region, wiek. Wstępna diagnoza
   W5 przed jakimikolwiek resztami modelu.
-- `[ ]` korelacje między cechami `_p90`: ile z 87 jest redundantnych przy współczynniku
+- `[x]` korelacje między cechami `_p90`: ile z 87 jest redundantnych przy współczynniku
   powyżej 0,95. Wejście do filtra korelacyjnego w Pipeline.
-- `[ ]` mapa braków: czy 295 braków w `dribble_success_percentage` rozkłada się losowo,
+- `[x]` mapa braków: czy 295 braków w `dribble_success_percentage` rozkłada się losowo,
   czy koncentruje w jednej pozycji lub lidze. Jeśli koncentruje, imputacja medianą
   wprowadzi obciążenie grupowe, czyli problem dla W5.
-- `[ ]` wrażliwość na próg minut: 0, 225, 450 i 900. Ile par zostaje, jak zmienia się
-  wariancja cech `_p90`, jak zmienia się skład wiekowy.
-- `[ ]` sufit informacyjny: ile wariancji celu tłumaczy sam wiek plus pozycja plus liga,
+- `[~]` wrażliwość na próg minut: 0, 225, 450 i 900. Zrobione dla 225, 450, 900
+  i 1350. Wariant „próg 0" wymaga przebiegu pipeline z innym `MIN_MINUT`, bo zbiór
+  modelowy jest już odfiltrowany. Do domknięcia przy następnym przebiegu danych.
+- `[x]` sufit informacyjny: ile wariancji celu tłumaczy sam wiek plus pozycja plus liga,
   bez statystyk gry. Podaje realistyczne oczekiwanie na R².
-- `[ ]` PSI i test Kołmogorowa-Smirnowa dla cech Big 5 wobec zbioru C. Tylko cechy,
+- `[x]` PSI i test Kołmogorowa-Smirnowa dla cech Big 5 wobec zbioru C. Tylko cechy,
   bez zmiennej celu (D-14).
 
-Narzędzia: matplotlib, seaborn, scipy, statsmodels. Artefakty: `notebooks/01-eda.ipynb`,
-`reports/figures/eda/`.
+Dołożone poza planem, bo wyszło z pomiaru dryfu:
+
+- `[x]` analiza nieciągłości w źródle: rozdzielenie trwałej zmiany poziomu cechy
+  od anomalii jednosezonowej, z testem tożsamości księgowej wskaźników dryblingu.
+- `[x]` pomiar kosztu filtra korelacyjnego na jakości predykcji, w dwóch wariantach
+  reguły wyboru cechy z pary.
+
+Narzędzia: matplotlib, scipy, scikit-learn. Seaborn i statsmodels okazały się zbędne.
+
+Artefakty: `case_study/football/eda.py` i `uruchom_eda.py`, raport `docs/05-eda.md`,
+czternaście figur w `reports/figures/eda/`, czternaście tabel w `reports/tables/eda/`
+oraz `reports/tables/eda/fakty.json` ze 175 zmierzonymi liczbami. Notatnika nie ma —
+logika mieszka w module, a raport cytuje wyłącznie liczby z `fakty.json`, więc każde
+zdanie da się sprawdzić bez uruchamiania czegokolwiek.
+
+### Wnioski
+
+Kolumna `dribble_success_percentage` zmienia znaczenie dokładnie na granicy zbioru
+treningowego. Do sezonu 2021-2022 skuteczność dryblingu i wskaźnik odbioru sumują
+się do stu w 98,7 procent wierszy, bo próba dryblingu ma dwa możliwe zakończenia.
+Od sezonu 2022-2023 tożsamość obowiązuje w 21,1 procent wierszy. Model uczy się tej
+cechy w jednej definicji i jest oceniany w drugiej, a granica pokrywa się co do
+sezonu z granicą podziału. Jest to najpoważniejsze ustalenie etapu i przedmiot O-6.
+
+Wolumen gry, czyli minuty i mecze, podnosi R² o 0,177 ponad blok kontekstowy,
+a wszystkie 95 statystyk boiskowych dokłada ponad to 0,092. Informacja „ile grał"
+jest dla wyceny cenniejsza niż komplet informacji „jak grał". Ranking ważności w W4
+prawie na pewno postawi `minuty_sezon` na czele, a interpretacja przyczynowa tej
+cechy jest wykluczona, bo minuty są skutkiem wartości zawodnika w tym samym stopniu,
+w jakim są jej przyczyną.
+
+Zestaw 95 statystyk boiskowych jest pomiarem mniej więcej szesnastu rzeczy:
+tyle składowych głównych zbiera 80 procent wariancji cech, przy wymiarowości
+partycypacyjnej 8,0 i pierwszej składowej tłumaczącej 28,5 procent. Cechy układają
+się w 28 bloków, z których największy liczy 21 kolumn opisujących objętość gry przy
+piłce. Deklarowana liczba 105 cech przecenia bogactwo opisu zawodnika, więc warto
+podawać obok niej liczbę efektywną.
+
+Filtr korelacyjny przy progu 0,95 kosztuje 0,15 R² na modelu liniowym i reguła
+wyboru cechy z pary tego nie zmienia. Regularyzacja grzbietowa radzi sobie ze
+współliniowością sama. Uzasadnieniem dla filtra zostaje stabilność wyjaśnień w W4,
+a nie dokładność w W1 — z ceną zmierzoną liczbowo.
+
+Krzywa wieku nie ma kształtu odwróconego U: najdroższym rocznikiem są
+osiemnastolatkowie z medianą 10,0 miliona euro. Efekt pochodzi z progu 225 minut,
+który z tego rocznika przepuszcza wyłącznie zawodników z realną grą w Big 5. Sama
+parabola broni się mimo to liczbowo — zbiera 96,6 procent informacji o wieku wobec
+sufitu rocznikowego — więc `wiek_do_kw` zostaje.
+
+Sufit informacyjny: sam kontekst, czyli sześć zmiennych niewymagających ani jednego
+meczu, daje R² 0,313 na kalibracji. Pełny zestaw cech na HistGradientBoosting bez
+strojenia daje 0,724. W tej skali należy czytać wyniki E5.
+
+Braki są skoncentrowane pozycyjnie: 4,88 procent u obrońców wobec 0,17 u napastników
+w obu wskaźnikach dryblingu. Imputacja medianą wprowadziłaby obciążenie grupowe,
+więc dane przemawiają za wariantem z flagą „zero prób" z O-3.
+
+Deflacja działa tam, gdzie liczono indeks: rozstęp poziomów na treningu spada
+z 0,263 do 0,047. Poza treningiem zostaje 0,158 z konstrukcji płaskiego
+przedłużenia, co jest znane co do mechanizmu.
+
+Przesunięcie cech do zbioru C jest umiarkowane — dwie cechy z PSI powyżej 0,25,
+mediana 0,033. Wobec przesunięcia poziomu celu o około 1,7 jednostki logarytmicznej
+oznacza to, że degradacja w E11 będzie zdominowana przez składnik obciążenia,
+co czyni rozkład z D-13 warunkiem sensowności głównego wyniku pracy.
 
 ## E4 — protokół walidacji i poziom odniesienia
 
@@ -309,8 +367,23 @@ Termin: najpóźniej E6.
 O-5. Wersjonowanie danych: DVC, Git LFS, czy zostawić poza repozytorium. Dziś 2,4 GB
 leży poza gitem. Termin: przed złożeniem.
 
+O-6. Co zrobić z cechami, które zmieniły definicję w źródle. Trzynaście cech ma trwały
+krok poziomu powyżej 0,2 odchylenia standardowego, a w przypadku pary wskaźników
+dryblingu granica zmiany pokrywa się co do sezonu z granicą między treningiem
+a kalibracją (A11 w `05-eda.md`). Warianty: usunąć te cechy ze zbioru, zostawić
+z adnotacją w ograniczeniach, albo wyrównać poziom per sezon — przy czym wyrównanie
+liczone na wszystkich sezonach byłoby wyciekiem, więc musiałoby korzystać wyłącznie
+z treningu i dzielić los deflacji z etapu 9. Termin: przed treningiem w E5.
+
+O-7. Czy filtr korelacyjny w ogóle wchodzi do Pipeline. Zmierzony koszt przy progu
+0,95 to 0,15 R² na modelu liniowym, a zysk leży w stabilności rankingu SHAP, czyli
+w W4. Rozstrzygnięcie wymaga zmierzenia obu stron na tej samej konfiguracji: tau
+Kendalla między rankingami z filtrem i bez. Termin: E5 razem z W4, ponieważ wcześniej
+brakuje drugiej połowy bilansu.
+
 ## Powiązane dokumenty
 
 - `01-projekt.md` — cel pracy, wymiary W1–W6, modele
 - `02-dane.md` — źródła, pipeline, słownik zbioru, ograniczenia
 - `03-decyzje.md` — log decyzji projektowych
+- `05-eda.md` — analiza eksploracyjna, wnioski i ciekawostki

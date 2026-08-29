@@ -1,0 +1,29 @@
+blok,cech,reprezentant,srednia_korelacja_w_bloku,czlonkowie
+1,2,red_cards_p90,0.649,"red_cards_p90, second_yellow_cards_p90"
+2,1,fouls_committed_p90,1.0,fouls_committed_p90
+3,1,yellow_cards_p90,1.0,yellow_cards_p90
+4,1,own_goals_p90,1.0,own_goals_p90
+5,1,penalties_conceded_p90,1.0,penalties_conceded_p90
+6,2,penalties_attempted_p90,0.939,"penalties_attempted_p90, penalties_scored_p90"
+7,1,offsides_z_podan_p90,1.0,offsides_z_podan_p90
+8,1,long_completion_percentage,1.0,long_completion_percentage
+9,2,dead_ball_p90,0.896,"dead_ball_p90, throw_ins_p90"
+10,3,crosses_p90,0.603,"blocked_passes_p90, crosses_into_penalty_area_p90, crosses_p90"
+11,1,straight_corner_kicks_p90,1.0,straight_corner_kicks_p90
+12,3,corner_kicks_p90,0.855,"outswinging_corner_kicks_p90, corner_kicks_p90, inswinging_corner_kicks_p90"
+13,1,errors_leading_to_shot_p90,1.0,errors_leading_to_shot_p90
+14,1,penalties_won_p90,1.0,penalties_won_p90
+15,2,blocks_p90,0.767,"blocks_p90, passes_blocked_p90"
+16,8,tackles_p90,0.667,"attempted_tackles_vs_dribblers_p90, dribbled_past_p90, tackles_midfield_third_p90, dribblers_tackled_p90, tackles_defensive_third_p90, tackles_plus_interceptions_p90, tackles_p90, tackles_won_p90"
+17,1,tackles_attacking_third_p90,1.0,tackles_attacking_third_p90
+18,1,through_balls_p90,1.0,through_balls_p90
+19,1,fouls_drawn_p90,1.0,fouls_drawn_p90
+20,1,aerials_won_percentage,1.0,aerials_won_percentage
+21,15,touches_attacking_third_p90,0.636,"final_third_carries_p90, progressive_carries_p90, penalty_area_carries_p90, tackled_p90, dribbles_attempted_p90, successful_dribbles_p90, assists_p90, goal_creating_actions_p90, progressive_passes_received_p90, touches_attacking_third_p90, passes_into_penalty_area_p90, key_passes_p90, shot_creating_actions_p90, xAG_p90, xA_p90"
+22,1,successful_dribbler_tackle_percentage,1.0,successful_dribbler_tackle_percentage
+23,14,shots_p90,0.615,"dispossessed_p90, miscontrolled_p90, shots_blocked_p90, clearances_p90, touches_defensive_penalty_area_p90, touches_defensive_third_p90, interceptions_p90, offsides_p90, goals_p90, touches_attacking_penalty_area_p90, npxG_p90, xG_p90, shots_on_target_p90, shots_p90"
+24,2,dribble_success_percentage,1.0,"dribble_success_percentage, tackled_perecentage"
+25,2,aerials_lost_p90,0.666,"aerials_lost_p90, aerials_won_p90"
+26,1,recoveries_p90,1.0,recoveries_p90
+27,4,long_completed_p90,0.689,"switches_p90, free_kick_p90, long_attempted_p90, long_completed_p90"
+28,21,total_completed_p90,0.729,"short_completion_percentage, completion_percentage, med_completion_percentage, progressive_carry_distance_p90, total_carry_distance_p90, final_third_passes_p90, progressive_passes_p90, short_attempted_p90, short_completed_p90, progressive_distance_p90, total_distance_p90, med_attempted_p90, med_completed_p90, carries_p90, received_p90, touches_midfield_third_p90, total_attempted_p90, live_ball_touches_p90, total_touches_p90, live_ball_p90, total_completed_p90"
