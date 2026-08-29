@@ -1,6 +1,6 @@
 # Dziennik decyzji
 
-Wersja 1.1, 2026-08-27
+Wersja 1.2, 2026-08-29
 
 Format uproszczonego ADR: kontekst, decyzja, uzasadnienie, konsekwencje. Wpisy zostają
 na stałe. Jeśli decyzja się zmienia, dodajemy nowy wpis z adnotacją, który zastępuje.
@@ -345,6 +345,74 @@ Deduplikujemy jawnie przed łączeniem, z raportem liczby usuniętych wierszy. P
 Wniosek ogólny: `validate` jest darmowy i wykrywa klasę błędów, które inaczej
 ujawniają się dopiero jako niewytłumaczalne wyniki modelu. Stosujemy go domyślnie,
 w każdym merge.
+
+## D-21 — korekta Duana przy powrocie do skali euro
+
+Status: przyjęta
+
+Model uczy się `log1p(wartość)`, więc predykcja jest średnią logarytmu. Wykładnik
+ze średniej logarytmów daje średnią geometryczną, która na rozkładzie skośnym leży
+poniżej średniej arytmetycznej. Samo `expm1` zaniżałoby więc każdą kwotę podaną
+w euro, systematycznie i niezależnie od liczby obserwacji.
+
+Raportujemy wartość oczekiwaną, skorygowaną współczynnikiem Duana. Współczynnik to
+średnia z `exp(reszt)` policzona wyłącznie na zbiorze treningowym; reszty testowe
+wymagałyby etykiet testowych, czyli byłyby wyciekiem.
+
+Wzór wynika z rozłożenia celu na predykcję i resztę: `log1p(y) = pred + e`, czyli
+`y = exp(pred) * exp(e) − 1`. Odruchowe `expm1(pred) * duan` przemnaża również tę
+jedynkę i jest formalnie błędne.
+
+Konsekwencja dla metryk. Korekta przesuwa predykcje w górę, żeby dawały poprawną
+średnią, a RMSLE i MdAPE mierzą środek rozkładu, więc doklejenie jej przed pomiarem
+pogorszyłoby te miary bez zysku interpretacyjnego. Podział jest stały i zaszyty
+w `trustml.evaluation.metrics`:
+
+| miara | skala | predykcja |
+|---|---|---|
+| RMSLE, R² | logarytmiczna | surowa |
+| MdAPE | euro | surowa, czyli mediana warunkowa |
+| MAE, MAPE | euro | po korekcie |
+
+Zmierzone współczynniki na poziomach odniesienia: 2,372 dla M0a, 2,109 dla M0b
+i 1,190 dla M0c. Rozpiętość jest sama w sobie informacją — im szerszy rozkład reszt,
+tym dalej średnia leży od mediany, a M0a rozrzuca błąd najszerzej.
+
+Ograniczenie do zapisania w E11: współczynnik policzony na Big 5 zostanie przyłożony
+do Primeira Ligi, gdzie rozkład reszt jest inny. Korekta będzie tam przybliżeniem.
+
+## D-22 — jeden sezon testowy jako wynik główny
+
+Status: przyjęta, zastępuje pytanie O-1
+
+Wynik główny liczymy na sezonie 2023-2024, czyli na 1 957 parach. Rolling origin
+zostaje w E7 jako krzywa degradacji w czasie.
+
+Przeniesienie rolling origin do protokołu walidacji mnożyłoby liczbę przebiegów
+w każdym kolejnym etapie przez liczbę okien, a wymowy wyniku głównego nie zmienia:
+degradacja w czasie jest przedmiotem W2 i tam ma swoje miejsce. Jedno okno testowe
+wystarcza jako punkt odniesienia dla macierzy model × wymiar z D-01.
+
+Konsekwencja: przy 1 957 parach różnice między modelami rzędu setnych R² trzeba
+opatrywać przedziałem, a nie czytać jako uporządkowanie. Test istotności wobec
+wariancji ziarnowej jest zaplanowany w E12.
+
+## D-23 — komórka M0b bez wymiaru sezonu
+
+Status: przyjęta
+
+Plan E4 opisywał poziom odniesienia M0b jako medianę w komórce pozycja × liga ×
+sezon. Przy podziale czasowym sezon zbioru ocenianego z definicji nie występuje
+w treningu, więc taka komórka wymagałaby sięgnięcia po etykiety zbioru,
+który właśnie oceniamy.
+
+Komórka to pozycja × liga, licząca medianę na całym zbiorze treningowym. Poziom cen
+sezonu docelowego zostaje nieuwzględniony i jest to świadoma cecha tego punktu
+odniesienia — model uczony na tych samych sezonach mierzy się z tym samym problemem.
+
+Wariant z rekalibracją poziomu przez indeks inflacji z etapu 9 nie daje nic: dla
+sezonów spoza treningu indeks jest płaskim przedłużeniem ostatniego współczynnika
+treningowego, więc predykcje byłyby identyczne co do liczby.
 
 ## Powiązane dokumenty
 

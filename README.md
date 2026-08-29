@@ -9,6 +9,7 @@ wystandaryzowany raport w sześciu wymiarach: poprawność predykcyjna (W1), odp
 ## Struktura
 
 - `src/trustml/` — biblioteka, niezależna od dziedziny
+- `configs/` — protokół oceny zamrożony w plikach konfiguracyjnych
 - `case_study/football/` — pipeline danych dziedzinowych
 - `data/raw/` — źródła, tylko do odczytu, poza gitem (około 2,4 GB)
 - `data/processed/` — zbiór modelowy
@@ -53,6 +54,24 @@ Przebieg trwa około dziesięciu sekund i czyta wyłącznie `data/processed/`. Z
 figury do `reports/figures/eda/`, tabele do `reports/tables/eda/` oraz
 `reports/tables/eda/fakty.json` z kompletem zmierzonych liczb. Omówienie wyników
 znajduje się w `docs/05-eda.md`.
+
+## Protokół walidacji i poziom odniesienia
+
+```
+python -m case_study.football.poziom_odniesienia
+```
+
+Przebieg trwa kilka sekund. Liczy trzy poziomy odniesienia — medianę globalną,
+medianę w komórce pozycja × liga oraz przepisanie wyceny z poprzedniego sezonu —
+na zbiorze kalibracyjnym i testowym, z podziałem na osie z D-12. Zapisuje
+`reports/tables/e4_baseline.csv` oraz dwie tabele diagnostyczne opisujące sam
+podział: `e4_przeciecia.csv` i `e4_foldy.csv`.
+
+Zasady oceny są zamrożone w `configs/split.yaml`: sezony w każdym zbiorze, kolumna
+grupująca dla GroupKFold, lista metryk, osie stratyfikacji i suma kontrolna pliku
+`model.parquet`, którego dotyczą. Po każdym przebiegu pipeline'u zmieniającym zbiór
+modelowy trzeba wpisać tam nową sumę i przeliczyć wyniki — do tego czasu
+`tests/test_no_leakage.py` nie przechodzi.
 
 ## Testy
 

@@ -1,0 +1,7 @@
+zbior_a,zbior_b,wspolnych_par,wspolnych_grup,udzial_grup_b
+kalibracja,test,0,1402,0.7164026571282576
+kalibracja,trening,0,1570,0.43635352973874375
+kalibracja,zbior_C,0,64,0.061361457334611694
+test,trening,0,1295,0.35992217898832685
+test,zbior_C,0,59,0.05656759348034516
+trening,zbior_C,0,116,0.1112176414189837

@@ -23,20 +23,6 @@ import sys
 import time
 from pathlib import Path
 
-# Kropka w `from . import eda` znaczy "z pakietu, w ktorym lezy ten plik".
-# Interpreter odczytuje nazwe tego pakietu ze zmiennej `__package__`, a ta jest
-# pusta, kiedy plik startuje wprost jako skrypt: `python uruchom_eda.py` albo
-# przycisk uruchamiania w VS Code. Wtedy import wzgledny nie ma punktu
-# zaczepienia i konczy sie bledem "attempted relative import with no known
-# parent package". Ponizszy blok odtwarza kontekst pakietu recznie.
-#
-# `Path(__file__).resolve()` to pelna sciezka tego pliku, a `.parents[2]` cofa
-# sie o trzy katalogi w gore (football -> case_study -> trustml), czyli do
-# korzenia repozytorium. `sys.path` to lista katalogow, w ktorych interpreter
-# szuka modulow; `insert(0, ...)` stawia korzen na jej poczatku, dzieki czemu
-# pakiet `case_study` staje sie widoczny. Przypisanie do `__package__` mowi
-# interpreterowi, jak nazywa sie pakiet tego modulu, i kropka w imporcie
-# ponizej ma juz do czego sie odniesc.
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     __package__ = "case_study.football"

@@ -1,6 +1,6 @@
 # Plan i status
 
-Wersja 1.1, 2026-08-27
+Wersja 1.2, 2026-08-29
 
 ## Mapa drogowa
 
@@ -9,7 +9,7 @@ Wersja 1.1, 2026-08-27
 | E1 | pipeline danych | `[x]` |
 | E2 | porządki: manifest, testy, importy | `[x]` |
 | E3 | analiza eksploracyjna | `[x]` |
-| E4 | protokół walidacji i poziom odniesienia | `[ ]` |
+| E4 | protokół walidacji i poziom odniesienia | `[x]` |
 | E5 | modele M1–M3, wymiar W1 | `[ ]` |
 | E6 | trustml 0.1: szkielet, W1, W6 | `[ ]` |
 | E7 | odporność, wymiar W2 | `[ ]` |
@@ -194,32 +194,84 @@ co czyni rozkład z D-13 warunkiem sensowności głównego wyniku pracy.
 
 ## E4 — protokół walidacji i poziom odniesienia
 
-Status: nierozpoczęte. Szacunek: dwa do trzech dni. Najważniejszy metodologicznie.
+Status: zrobione.
 
-Celem jest ustalenie zasad oceny raz i trzymanie się ich do końca. Zmiana protokołu
+Celem było ustalenie zasad oceny raz i trzymanie się ich do końca. Zmiana protokołu
 po zobaczeniu wyników to najcichszy sposób na oszukanie samego siebie.
 
-- `[ ]` `configs/split.yaml` — podział zamrożony, z hashem `model.parquet`.
-- `[ ]` `src/trustml/evaluation/splits.py` — GroupKFold po `player_id` wewnątrz zbioru
+- `[x]` `configs/split.yaml` — podział zamrożony, z hashem `model.parquet`.
+- `[x]` `src/trustml/evaluation/splits.py` — GroupKFold po `player_id` wewnątrz zbioru
   treningowego, do strojenia hiperparametrów.
-- `[ ]` `tests/test_no_leakage.py` — przecięcie par `(player_id, season)` między
+- `[x]` `tests/test_no_leakage.py` — przecięcie par `(player_id, season)` między
   zbiorami musi być puste. Osobno raport przecięcia samych `player_id`, jako świadoma
   i udokumentowana cecha podziału (D-12).
-- `[ ]` `src/trustml/evaluation/metrics.py` — RMSLE, MdAPE, MAE, R², wszystkie
+- `[x]` `src/trustml/evaluation/metrics.py` — RMSLE, MdAPE, MAE, R², wszystkie
   z obowiązkowym parametrem stratyfikacji (D-12).
-- `[ ]` transformacja odwrotna do euro: korekta Duana albo jawna deklaracja,
-  że raportujemy medianę warunkową. Rozstrzygnąć raz.
-- `[ ]` poziom odniesienia: M0a mediana globalna, M0b mediana w komórce pozycja × liga
-  × sezon, M0c przepisanie wyceny z t−1 (D-06). M0c raportowany w dwóch wariantach:
+- `[x]` transformacja odwrotna do euro: korekta Duana, z regułą podziału metryk
+  na logarytmiczne i wyrażone w euro (D-21).
+- `[x]` poziom odniesienia: M0a mediana globalna, M0b mediana w komórce pozycja ×
+  liga, M0c przepisanie wyceny z t−1 (D-06). M0c raportowany w dwóch wariantach:
   na podzbiorze z dostępnym t−1, czyli 71,6 procent testu, oraz na pełnym teście
   z uzupełnieniem M0b.
+- `[x]` rozstrzygnięcie O-1: jeden sezon testowy jako wynik główny, rolling origin
+  w E7 (D-22).
 
-Kluczowe pytanie tego etapu: jak wysoko leży M0b i M0c. Ta liczba określa wymowę całej
-pracy. W poprzedniej wersji zbioru M0c dawało R² 0,69 i bez tego punktu odniesienia
-R² 0,88 modelu byłoby łatwo przecenić.
+Artefakty: `configs/split.yaml`, `src/trustml/evaluation/` z modułami `metrics.py`,
+`splits.py` i `baselines.py`, `case_study/football/poziom_odniesienia.py`,
+`tests/test_no_leakage.py` i `tests/test_metryki.py`, tabele
+`reports/tables/e4_baseline.csv`, `e4_przeciecia.csv` i `e4_foldy.csv`.
 
-Artefakty: `configs/split.yaml`, `src/trustml/evaluation/metrics.py` i `splits.py`,
-`tests/test_no_leakage.py`, `reports/tables/e4_baseline.csv`.
+Narzędzia: scikit-learn (GroupKFold), pyyaml, pytest.
+
+### Wnioski
+
+Poziom odniesienia leży wysoko. M0c na teście daje R² 0,810 w skali logarytmicznej,
+RMSLE 0,532 i MdAPE 33,3 procent, przy pokryciu 71,6 procent zbioru. Na pełnym
+teście, z brakami uzupełnionymi przez M0b, spada do R² 0,622 i RMSLE 0,761.
+Obie liczby trzeba podawać razem: sam wynik z podzbioru wygląda lepiej, niż jest,
+bo wypadają z niego zawodnicy bez historii rynkowej.
+
+Poprzednia wersja zbioru dawała dla M0c R² 0,8375 (D-06). Nowy pipeline zmienia
+tę liczbę o 0,027, co jest zgodnością wystarczającą, żeby uznać oba pomiary za ten
+sam fakt: lepkość wycen z roku na rok wyjaśnia cztery piąte wariancji celu.
+
+M0c nie jest poprzeczką dla modeli, tylko eksponatem. Korzysta z wyceny świadomie
+odciętej modelom (D-05), a przepuszczony przez pozostałe wymiary wypada fatalnie:
+nie produkuje przedziału niepewności (W3), nie ma czego wyjaśniać (W4), dziedziczy
+całe obciążenie wycen Transfermarkt (W5) i istnieje tylko dla zawodnika, którego
+rynek już wycenił (W2). Przypadek maksymalnie dokładny i bezużyteczny operacyjnie
+jest najczystszą ilustracją założenia roboczego z D-01, więc M0c wchodzi do macierzy
+zbiorczej w E12 jako pełnoprawny wiersz.
+
+Sam kontekst pozycji i ligi wyjaśnia niewiele: M0b daje R² 0,103 na teście.
+W zestawieniu z sufitem informacyjnym z E3, gdzie sześć zmiennych kontekstowych
+dawało 0,313, widać, że pracę wykonuje w tym bloku wiek, a nie przynależność
+do ligi.
+
+M0a ma R² ujemne, −0,048. Predykcja stałą medianą treningu jest gorsza niż średnia
+zbioru testowego, bo rozkład jest skośny, a poziom cen na teście leży wyżej niż
+na treningu. Liczba jest poprawna i warto ją zostawić jako przypomnienie, że R²
+mierzy się względem średniej ocenianego zbioru.
+
+Rozstęp współczynników Duana między poziomami odniesienia — od 1,190 dla M0c
+do 2,372 dla M0a — pokazuje, jak mocno powrót ze skali logarytmicznej zależy
+od szerokości rozkładu reszt. Przy modelach z E5 spodziewamy się wartości bliższych
+dolnemu końcowi.
+
+Przecięcie zawodników między kalibracją a testem wynosi 1 402 osoby, czyli 71,6
+procent składu testu. To dokładnie ten sam zbiór, który daje pokrycie M0c — test ma
+jeden wiersz na zawodnika, więc obie liczby opisują to samo zjawisko: siedmiu na
+dziesięciu zawodników sezonu 2023-2024 miało wycenę rok wcześniej.
+
+Stratyfikacja pokazuje swoją wartość od razu. M0c osiąga R² 0,842 na zawodnikach
+znanych z treningu i 0,611 na nowych, a M0c_pelny odpowiednio 0,761 i 0,291.
+Poziom odniesienia degraduje na nowych zawodnikach tak samo jak modele z D-12,
+więc porównanie „nowi z nowymi" w E11 ma sens również po tej stronie.
+
+Podział wewnętrzny jest czysty: pięć foldów po około 1 585 wierszy, po 719 albo 720
+zawodników w części walidacyjnej, zero zawodników wspólnych z częścią uczącą.
+Przecięcie par `(player_id, season)` jest zerowe we wszystkich sześciu parach
+zbiorów.
 
 ## E5 — modele M1–M3, wymiar W1
 
@@ -348,9 +400,10 @@ League, pozwala zbudować krzywą dawka-odpowiedź o kilku punktach pomiarowych.
 
 ## Pytania otwarte
 
-O-1. Czy jeden sezon testowy, czyli 1 957 par, wystarczy jako główny wynik, czy przejść
-na rolling origin już w E4. Koszt: mniej danych treningowych w każdym oknie. Zysk:
-krzywa zamiast punktu i odporniejszy wynik główny. Termin: przed E4.
+O-1. ~~Czy jeden sezon testowy, czyli 1 957 par, wystarczy jako główny wynik.~~
+Rozstrzygnięte 2026-08-29 w D-22: wynik główny na jednym sezonie testowym, rolling
+origin zostaje w E7 jako krzywa degradacji w czasie. Konsekwencja: różnice między
+modelami rzędu setnych R² wymagają przedziału, a nie samego uporządkowania.
 
 O-2. ~~Zbiór C zaczyna się dopiero od sezonu 2018-2019.~~ Rozstrzygnięte 2026-08-27
 audytem archiwów: granica pochodzi ze źródła. Primeira Liga była scrapowana rok

@@ -1,0 +1,130 @@
+# Protokol oceny - zamrozony w etapie E4.
+#
+# Plik jest deklaracja, a nie przelacznikiem: podzial powstaje w etapie 8
+# pipeline'u i mieszka w kolumnie "podzial" zbioru modelowego. Tutaj zapisujemy,
+# jak ma wygladac, razem z odciskiem pliku danych, ktorego dotyczy.
+#
+# Odcisk jest tu po to, zeby porownanie wynikow z dwoch roznych dni nie okazalo
+# sie po cichu porownaniem dwoch roznych zbiorow. Po kazdym przebiegu pipeline'u,
+# ktory zmienia model.parquet, trzeba wpisac nowy sha256 swiadomie.
+#
+# Zasady spisane nizej obowiazuja do konca pracy. Zmiana protokolu po zobaczeniu
+# wynikow jest najcichszym sposobem na oszukanie samego siebie.
+
+wersja: 1
+zamrozony: 2026-08-29
+
+dane:
+  sciezka: data/processed/model.parquet
+  sha256: 0703e0cf2029eb65f11217e2ba62dec853b6d7f435c3e2c890fbb53c30be5aa5
+  wiersze: 13709
+  kolumny: 115
+
+cel:
+  glowny: log_market_value        # log1p(market_value_in_eur), D-04
+  zdeflowany: log_market_value_real
+  w_euro: market_value_in_eur
+
+# --- Podzial zewnetrzny: czasowy (D-16) ---
+#
+# Podzial losowy rozrzucilby tego samego zawodnika po treningu i tescie, a jego
+# wycena jest z roku na rok mocno skorelowana. Zbior kalibracyjny istnieje
+# wylacznie dla predykcji konforemnej z W3 - kalibracja na treningu daje
+# zawyzone pokrycie.
+
+podzial_zewnetrzny:
+  kolumna: podzial
+  klucz_obserwacji: [player_id, season]
+  zbiory:
+    trening:
+      sezony: ["2017-2018", "2018-2019", "2020-2021", "2021-2022"]
+      ligi: Big 5
+      wiersze: 7924
+    kalibracja:
+      sezony: ["2022-2023"]
+      ligi: Big 5
+      wiersze: 1982
+    test:
+      sezony: ["2023-2024"]
+      ligi: Big 5
+      wiersze: 1957
+    zbior_C:
+      sezony: ["2018-2019", "2020-2021", "2021-2022", "2022-2023", "2023-2024"]
+      ligi: Primeira_Liga
+      wiersze: 1846
+  # Liga odlozona w calosci na pomiar przesuniecia dziedziny. Warunek sprawdzany
+  # asercja w etapie 8 pipeline'u i testem w tests/test_no_leakage.py.
+  liga_wylacznie_w_zbiorze_c: Primeira_Liga
+  # Luka kalendarzowa: sezon 2019-2020 wypada ze zbioru, bo Ligue 1 rozegrala
+  # 279 z 380 meczow. Ma znaczenie wszedzie, gdzie liczy sie "poprzedni sezon".
+  brakujacy_sezon: "2019-2020"
+
+# --- Podzial wewnetrzny: strojenie hiperparametrow ---
+#
+# Dotyczy wylacznie zbioru treningowego. Zbior kalibracyjny sluzy W3 oraz early
+# stoppingowi, zbior testowy zostaje nietkniety do konca.
+
+podzial_wewnetrzny:
+  metoda: GroupKFold
+  kolumna_grupujaca: player_id
+  n_podzialow: 5
+  tasowanie: false          # domyslne, deterministyczne - wymog W6
+
+# --- Rozstrzygniecie O-1 ---
+#
+# Wynik glowny liczymy na jednym sezonie testowym. Rolling origin zostaje w E7
+# jako krzywa degradacji w czasie, czyli w etapie, do ktorego nalezy
+# merytorycznie. Przeniesienie go do protokolu mnozyloby liczbe przebiegow
+# w kazdym kolejnym etapie bez zmiany wymowy wyniku.
+
+wynik_glowny:
+  zbior: test
+  liczba_par: 1957
+  rolling_origin: E7
+
+# --- Powrot ze skali logarytmicznej do euro (D-21) ---
+
+retransformacja:
+  metoda: duan
+  # Wspolczynnik liczony wylacznie na resztach treningowych - reszty testowe
+  # wymagalyby etykiet testowych.
+  zrodlo_reszt: trening
+  # Miary logarytmiczne i medianowe licza sie na predykcjach surowych, miary
+  # w euro po korekcie. Szczegoly w docstringu trustml.evaluation.metrics.
+  skorygowane: [mae_eur, mape]
+  nieskorygowane: [rmsle, r2_log, mdape]
+
+# --- Metryki (D-15) ---
+
+metryki:
+  glowne: [rmsle, mdape]
+  pomocnicze: [r2_log, mae_eur]
+  do_porownan_historycznych: [mape]
+
+# Kazdy wynik raportujemy z podzialem na te osie (D-12). Jedna liczba dla calego
+# zbioru chowa roznice miedzy zawodnikami znanymi z treningu a nowymi.
+osie_stratyfikacji: [znany_z_treningu, pozycja, liga]
+
+# --- Poziomy odniesienia (D-06) ---
+
+poziomy_odniesienia:
+  M0a:
+    opis: mediana globalna ze zbioru treningowego
+  M0b:
+    opis: mediana w komorce
+    kolumny: [pozycja, liga]
+    # Plan E4 mowil o komorce pozycja x liga x sezon. Przy podziale czasowym
+    # sezon zbioru docelowego z definicji nie wystepuje w treningu, wiec
+    # policzenie takiej komorki wymagaloby siegniecia po etykiety ocenianego
+    # zbioru. Sezon wypada z definicji komorki.
+  M0c:
+    opis: przepisanie wyceny z sezonu poprzedniego
+    zrodlo: wszystkie sezony wczesniejsze niz oceniany
+    # Korzysta z wyceny swiadomie odcietej modelom (D-05), wiec jest punktem
+    # odniesienia, a nie konkurentem. Raportowany w dwoch wariantach, bo sama
+    # liczba z podzbioru z pokryciem wyglada lepiej, niz jest.
+    warianty: [podzbior_z_pokryciem, pelny_zbior_uzupelniony_M0b]
+
+# --- Powiazane decyzje ---
+
+decyzje: [D-04, D-05, D-06, D-12, D-13, D-15, D-16, D-21]
