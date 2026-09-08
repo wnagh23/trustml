@@ -25,6 +25,7 @@ from trustml.evaluation import (
     przepisanie_z_poprzedniego,
     r2_log,
     rmsle,
+    skala_agregatu,
     uzupelnij,
     wspolczynnik_duana,
 )
@@ -129,16 +130,35 @@ def test_duan_odzyskuje_srednia_w_euro():
     assert do_euro(pred, duan).mean() == pytest.approx(srednia_prawdy, rel=0.01)
 
 
-def test_korekta_nie_dotyka_miar_logarytmicznych():
-    """RMSLE i MdAPE licza sie na predykcjach surowych, wiec duan ich nie rusza."""
+def test_korekta_nie_dotyka_zadnej_metryki():
+    """
+    Duan wchodzi wylacznie do agregatu (D-24).
+
+    Wszystkie metryki bledu - RMSLE, MdAPE, MAE - osiagaja minimum przy medianie
+    warunkowej, wiec korekta w gore moze je tylko pogorszyc.
+    """
     y = np.array([10.0, 12.0, 14.0])
     pred = np.array([10.5, 11.0, 14.5])
     bez = metryki(y, pred, duan=1.0)
     z_korekta = metryki(y, pred, duan=1.3)
-    assert bez["rmsle"] == z_korekta["rmsle"]
-    assert bez["mdape"] == z_korekta["mdape"]
-    assert bez["r2_log"] == z_korekta["r2_log"]
-    assert bez["mae_eur"] != z_korekta["mae_eur"]
+    for miara in ["rmsle", "krotnosc", "mdape", "r2_log", "mae_eur", "mape", "agregat"]:
+        assert bez[miara] == z_korekta[miara], miara
+    assert z_korekta["agregat_po_korekcie"] > bez["agregat_po_korekcie"]
+
+
+def test_krotnosc_to_wykladnik_z_rmsle():
+    y = np.array([10.0, 12.0, 14.0])
+    pred = np.array([10.5, 11.0, 14.5])
+    w = metryki(y, pred)
+    assert w["krotnosc"] == pytest.approx(np.exp(w["rmsle"]))
+
+
+def test_agregat_wylapuje_systematyczne_zanizenie():
+    """Predykcja polowy prawdziwej wartosci daje agregat 0,5."""
+    prawda = np.array([2_000_000.0, 8_000_000.0, 30_000_000.0])
+    y = np.log1p(prawda)
+    pred = np.log(prawda / 2)
+    assert skala_agregatu(y, pred) == pytest.approx(0.5, rel=1e-6)
 
 
 # --- stratyfikacja ---

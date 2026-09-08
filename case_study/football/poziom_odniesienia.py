@@ -238,7 +238,7 @@ def ocen_zbior(
             f"  MdAPE {calosc['mdape']:5.1f}%"
             f"  R2 {calosc['r2_log']:6.3f}"
             f"  MAE {calosc['mae_eur'] / 1e6:5.2f} mln"
-            f"  Duan {calosc['duan']:.3f}"
+            f"  agregat {calosc['agregat']:.2f} -> {calosc['agregat_po_korekcie']:.2f}"
         )
 
     return pd.concat(czesci, ignore_index=True)

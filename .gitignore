@@ -17,6 +17,15 @@ data/processed/*.csv
 !data/**/.gitkeep
 !data/processed/manifest.json
 
+# Wytrenowane modele. Odtwarzalne z kodu i metryczki przebiegu
+# (reports/tables/e5_metryczka.json ma ziarno i hiperparametry), wiec binaria
+# nie musza siedziec w historii.
+#
+# Ukosnik z przodu jest tu konieczny. Wzorzec "models/" bez niego pasuje do
+# katalogu o tej nazwie na kazdym poziomie drzewa, wiec zjadal rowniez
+# src/trustml/models/ - czyli wspolny Pipeline biblioteki.
+/models/
+
 # Migawki posrednich etapow do ogladania w Data Wrangler
 data/podglad/
 

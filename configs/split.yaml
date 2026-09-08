@@ -89,16 +89,21 @@ retransformacja:
   # Wspolczynnik liczony wylacznie na resztach treningowych - reszty testowe
   # wymagalyby etykiet testowych.
   zrodlo_reszt: trening
-  # Miary logarytmiczne i medianowe licza sie na predykcjach surowych, miary
-  # w euro po korekcie. Szczegoly w docstringu trustml.evaluation.metrics.
-  skorygowane: [mae_eur, mape]
-  nieskorygowane: [rmsle, r2_log, mdape]
+  # Wszystkie metryki licza sie na predykcjach surowych - kazda z nich osiaga
+  # minimum przy medianie warunkowej, wiec korekta moze je tylko pogorszyc (D-24).
+  # Duan wchodzi do kwot podawanych czytelnikowi i do kolumny diagnostycznej.
+  skorygowane: [agregat_po_korekcie]
+  nieskorygowane: [rmsle, r2_log, mdape, mae_eur, mape, agregat]
+  # Kryterium przydatnosci korekty dla danego modelu: suma predykcji podzielona
+  # przez sume prawdy ma lezec blisko 1,0. Dla M0c korekta psuje ten stosunek
+  # z 0,98 na 1,17, dla M0b poprawia go z 0,46 na 0,97.
+  diagnostyka: agregat
 
 # --- Metryki (D-15) ---
 
 metryki:
   glowne: [rmsle, mdape]
-  pomocnicze: [r2_log, mae_eur]
+  pomocnicze: [r2_log, mae_eur, krotnosc, agregat]
   do_porownan_historycznych: [mape]
 
 # Kazdy wynik raportujemy z podzialem na te osie (D-12). Jedna liczba dla calego
@@ -127,4 +132,4 @@ poziomy_odniesienia:
 
 # --- Powiazane decyzje ---
 
-decyzje: [D-04, D-05, D-06, D-12, D-13, D-15, D-16, D-21]
+decyzje: [D-04, D-05, D-06, D-12, D-13, D-15, D-16, D-21, D-22, D-23, D-24]

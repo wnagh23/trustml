@@ -15,6 +15,7 @@ from .baselines import (
 from .metrics import (
     KOLUMNY_METRYK,
     do_euro,
+    krotnosc_bledu,
     mae_euro,
     mape,
     mdape,
@@ -22,6 +23,7 @@ from .metrics import (
     ocen,
     r2_log,
     rmsle,
+    skala_agregatu,
     wspolczynnik_duana,
 )
 from .splits import (
@@ -37,6 +39,7 @@ from .splits import (
 __all__ = [
     "KOLUMNY_METRYK",
     "do_euro",
+    "krotnosc_bledu",
     "mae_euro",
     "mape",
     "mdape",
@@ -52,6 +55,7 @@ __all__ = [
     "r2_log",
     "raport_przeciec",
     "rmsle",
+    "skala_agregatu",
     "sprawdz_odcisk_danych",
     "uzupelnij",
     "wczytaj_konfiguracje",

@@ -156,7 +156,11 @@ Drugi to kompletność zapisu przebiegu: wersje pakietów, ziarno, suma kontroln
 danych wejściowych, hash commita, parametry. Dopiero komplet tych informacji czyni
 przebieg odtwarzalnym, niezależnie od tego, jak dobre ma metryki.
 
-Narzędzie: MLflow.
+Narzędzie: repozytorium, nie MLflow (D-27). Prowieniencja danych mieszka
+w `data/processed/manifest.json`, a prowieniencja przebiegu w
+`reports/tables/e5_metryczka.json` i `e5_przebiegi.csv`. Informacja o przebiegu ma
+leżeć w gicie, w formacie czytelnym bez uruchamiania czegokolwiek, i wersjonować się
+razem z kodem, który ją wyprodukował.
 
 Stan faktyczny jest tu słaby. Prowieniencja danych surowych jest zerowa — `master.db`
 przychodzi bez jakichkolwiek metadanych scrape'u. To największy dług tego wymiaru, opisany

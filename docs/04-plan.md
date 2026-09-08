@@ -1,6 +1,6 @@
 # Plan i status
 
-Wersja 1.2, 2026-08-29
+Wersja 1.3, 2026-09-08
 
 ## Mapa drogowa
 
@@ -10,7 +10,7 @@ Wersja 1.2, 2026-08-29
 | E2 | porządki: manifest, testy, importy | `[x]` |
 | E3 | analiza eksploracyjna | `[x]` |
 | E4 | protokół walidacji i poziom odniesienia | `[x]` |
-| E5 | modele M1–M3, wymiar W1 | `[ ]` |
+| E5 | modele M1–M3, wymiar W1 | `[~]` |
 | E6 | trustml 0.1: szkielet, W1, W6 | `[ ]` |
 | E7 | odporność, wymiar W2 | `[ ]` |
 | E8 | niepewność, wymiar W3 | `[ ]` |
@@ -207,8 +207,8 @@ po zobaczeniu wyników to najcichszy sposób na oszukanie samego siebie.
   i udokumentowana cecha podziału (D-12).
 - `[x]` `src/trustml/evaluation/metrics.py` — RMSLE, MdAPE, MAE, R², wszystkie
   z obowiązkowym parametrem stratyfikacji (D-12).
-- `[x]` transformacja odwrotna do euro: korekta Duana, z regułą podziału metryk
-  na logarytmiczne i wyrażone w euro (D-21).
+- `[x]` transformacja odwrotna do euro: korekta Duana (D-21), po pomiarze
+  zawężona do kwot podawanych czytelnikowi (D-24).
 - `[x]` poziom odniesienia: M0a mediana globalna, M0b mediana w komórce pozycja ×
   liga, M0c przepisanie wyceny z t−1 (D-06). M0c raportowany w dwóch wariantach:
   na podzbiorze z dostępnym t−1, czyli 71,6 procent testu, oraz na pełnym teście
@@ -253,10 +253,26 @@ zbioru testowego, bo rozkład jest skośny, a poziom cen na teście leży wyżej
 na treningu. Liczba jest poprawna i warto ją zostawić jako przypomnienie, że R²
 mierzy się względem średniej ocenianego zbioru.
 
-Rozstęp współczynników Duana między poziomami odniesienia — od 1,190 dla M0c
-do 2,372 dla M0a — pokazuje, jak mocno powrót ze skali logarytmicznej zależy
-od szerokości rozkładu reszt. Przy modelach z E5 spodziewamy się wartości bliższych
-dolnemu końcowi.
+Korekta Duana wymaga zawężenia zakresu i to jest drugie ustalenie metodologiczne
+etapu. Pierwotna reguła z D-21 kierowała MAE i MAPE na predykcje skorygowane.
+Pomiar pokazał, że korekta pogarsza MAE na każdym poziomie odniesienia i w obu
+zbiorach — 10,83 wobec 11,75 miliona dla M0a, 4,81 wobec 5,92 dla M0c — ponieważ
+średnia z wartości bezwzględnych osiąga minimum przy medianie warunkowej. Metryki
+liczymy więc na predykcjach surowych, a korektę stosujemy do kwot i sum (D-24).
+
+Sam mechanizm jest przy tym potrzebny. Suma predykcji podzielona przez sumę prawdy
+wynosi na teście 0,37 dla M0a i 0,46 dla M0b, czyli wyceniając składy tymi poziomami
+podalibyśmy mniej niż połowę ich wartości. Po korekcie stosunki idą na 0,87 i 0,97.
+
+Korekty nie wolno przy tym stosować w ciemno. Dla M0c stosunek sum bez niej wynosi
+0,98, a po niej 1,17. Duan zakłada, że predykcja jest wygładzoną wartością
+oczekiwaną, a M0c przepisuje prawdziwą cenę sprzed roku i ma już rozrzut
+rzeczywistego rozkładu. Stąd obowiązek raportowania obu wariantów w kolumnach
+`agregat` i `agregat_po_korekcie`.
+
+Rozstęp samych współczynników — od 1,190 dla M0c do 2,372 dla M0a — pokazuje, jak
+mocno powrót ze skali logarytmicznej zależy od szerokości rozkładu reszt. Przy
+modelach z E5 spodziewamy się wartości bliższych dolnemu końcowi.
 
 Przecięcie zawodników między kalibracją a testem wynosi 1 402 osoby, czyli 71,6
 procent składu testu. To dokładnie ten sam zbiór, który daje pokrycie M0c — test ma
@@ -275,24 +291,57 @@ zbiorów.
 
 ## E5 — modele M1–M3, wymiar W1
 
-Status: nierozpoczęte. Szacunek: cztery do sześciu dni.
+Status: kod gotowy, wynik do przeliczenia. Zostały trzy rzeczy: jeden pełny przebieg
+strojenia, uruchomienie wariantów i commit.
 
-- `[ ]` wspólny Pipeline: `SimpleImputer`, filtr korelacyjny,
-  `OneHotEncoder(handle_unknown="ignore")` bez `drop`, `StandardScaler`.
-- `[ ]` M1 Elastic Net na `log1p(y)`, alfa i `l1_ratio` z walidacji krzyżowej.
-- `[ ]` M2 Random Forest.
-- `[ ]` M3 XGBoost, early stopping na zbiorze kalibracyjnym.
-- `[ ]` strojenie przez optunę, około stu prób na model, wyłącznie GroupKFold
-  na treningu.
-- `[ ]` MLflow: każdy przebieg z hashem danych i configu.
-- `[ ]` analiza reszt: heteroskedastyczność, regresja do średniej w ogonach, odchylenia
-  per liga i pozycja.
-- `[ ]` porównanie celu nominalnego i zdeflowanego (D-04). Hipoteza: zysk pojawi się
-  u modeli liniowych, drzewa zostaną na swoim poziomie.
-- `[ ]` test jednostkowy na pułapkę `drop="first"` z D-10.
+Wszystkie punkty planu są zaimplementowane. Liczby leżące dziś w `reports/tables/`
+pochodzą jednak z przebiegu diagnostycznego na dwóch próbach optuny zamiast stu —
+patrz pole `prob_strojenia` w `e5_metryczka.json` — więc nie nadają się do pracy.
 
-Artefakty: `src/trustml/models/`, `models/*.joblib`, `mlruns/`,
-`reports/tables/e5_w1.csv`, `notebooks/02-modelowanie.ipynb`.
+- `[x]` wspólny Pipeline w `src/trustml/models/pipeline.py`: `SimpleImputer` z medianą
+  i `add_indicator` (D-26), `StandardScaler`, opcjonalny filtr korelacyjny domyślnie
+  wyłączony (O-7), `OneHotEncoder(handle_unknown="ignore")` bez `drop` (D-10)
+  i `remainder="drop"`.
+- `[x]` M1 Elastic Net na `log1p(y)`, alfa i `l1_ratio` z przestrzeni optuny.
+- `[x]` M2 Random Forest.
+- `[x]` M3 XGBoost, early stopping na zbiorze kalibracyjnym.
+- `[x]` strojenie przez optunę, GroupKFold po zawodniku wyłącznie na treningu.
+  TPESampler z ziarnem (W6) i MedianPruner przycinający słabe próby od drugiego foldu.
+- `[x]` śledzenie przebiegów w repozytorium zamiast MLflow (D-27): `e5_przebiegi.csv`
+  z wierszem na próbę i `e5_metryczka.json` z ziarnem, hashem danych, hashem
+  konfiguracji, liczbą cech i najlepszymi hiperparametrami.
+- `[x]` analiza reszt: heteroskedastyczność po decylach predykcji, regresja do średniej
+  po decylach prawdy, odchylenia per liga i pozycja — `e5_reszty.csv`.
+- `[x]` porównanie celu nominalnego i zdeflowanego (D-04) — zaimplementowane
+  w `warianty.py` razem z wariantami D-25 i O-7.
+- `[x]` test jednostkowy na pułapkę `drop="first"` z D-10 —
+  `tests/test_pipeline.py::test_koder_nie_upuszcza_poziomu`, obok dwunastu pozostałych
+  testów przetwarzania.
+- `[ ]` pełny przebieg `python -m case_study.football.modelowanie` na stu próbach.
+  Kilkadziesiąt minut. Dopiero on produkuje liczby do pracy.
+- `[ ]` `python -m case_study.football.warianty` — `e5_warianty.csv` jeszcze nie istnieje.
+- `[ ]` commit domykający etap. Dziś cały E5 leży poza gitem, przy ostatnim commicie
+  opisującym E4. Dla W6 jest to dług, a nie drobiazg: metryczka zapisuje hash danych
+  i konfiguracji, ale nie ma hasha commita, do którego mogłaby się odnieść.
+
+Artefakty: `src/trustml/models/pipeline.py`, `case_study/football/modelowanie.py`
+i `warianty.py`, `models/m{1,2,3}.joblib`, `tests/test_pipeline.py` oraz tabele
+`reports/tables/e5_w1.csv`, `e5_przebiegi.csv`, `e5_reszty.csv`, `e5_metryczka.json`
+i `e5_warianty.csv`.
+
+Notatnika nie ma i nie będzie — logika mieszka w module, tak jak w E3 (D-18).
+
+### Wstępne odczyty z przebiegu diagnostycznego
+
+Liczby są niepełnowartościowe, ale rząd wielkości widać już teraz i warto go znać przed
+pełnym przebiegiem. Na teście, w skali logarytmicznej: M1 daje R² 0,692, M2 0,668,
+a M3 0,719. Sufit informacyjny z E3, czyli HistGradientBoosting bez strojenia, wynosił
+0,724, a M0c na pełnym teście 0,622.
+
+M3 na dwóch próbach siedzi więc praktycznie na nietuningowanym sufcie. Sto prób
+najpewniej doda setne części R², co jest dokładnie tą sytuacją, którą przewiduje D-22:
+różnice trzeba będzie opatrzyć przedziałem, a nie czytać jako uporządkowanie. Wymowa
+pracy leży w W2–W6, nie w W1. Do potwierdzenia pełnym przebiegiem.
 
 ## E6 — trustml 0.1
 
@@ -410,9 +459,9 @@ audytem archiwów: granica pochodzi ze źródła. Primeira Liga była scrapowana
 później niż Big 5 (od 2024-11-08) i tylko od sezonu 2018-2019. Konsekwencja dla E11:
 zbiór C obejmuje o rok krótszą historię niż trening.
 
-O-3. Czy wskaźniki procentowe z brakiem strukturalnym powinny dostać flagę
-„zero prób" obok imputacji, czy samą imputację (D-09). Termin: przy budowie Pipeline
-w E5.
+O-3. ~~Czy wskaźniki procentowe z brakiem strukturalnym powinny dostać flagę
+„zero prób" obok imputacji.~~ Rozstrzygnięte 2026-08-29 w D-26: imputacja medianą
+plus flaga braku, przez `add_indicator` w Pipeline.
 
 O-4. Czym `trustml` różni się od deepchecks, giskard, evidently i fairlearn.
 Termin: najpóźniej E6.
@@ -420,19 +469,22 @@ Termin: najpóźniej E6.
 O-5. Wersjonowanie danych: DVC, Git LFS, czy zostawić poza repozytorium. Dziś 2,4 GB
 leży poza gitem. Termin: przed złożeniem.
 
-O-6. Co zrobić z cechami, które zmieniły definicję w źródle. Trzynaście cech ma trwały
-krok poziomu powyżej 0,2 odchylenia standardowego, a w przypadku pary wskaźników
-dryblingu granica zmiany pokrywa się co do sezonu z granicą między treningiem
-a kalibracją (A11 w `05-eda.md`). Warianty: usunąć te cechy ze zbioru, zostawić
-z adnotacją w ograniczeniach, albo wyrównać poziom per sezon — przy czym wyrównanie
-liczone na wszystkich sezonach byłoby wyciekiem, więc musiałoby korzystać wyłącznie
-z treningu i dzielić los deflacji z etapu 9. Termin: przed treningiem w E5.
+O-6. ~~Co zrobić z cechami, które zmieniły definicję w źródle.~~ Rozstrzygnięte
+2026-08-29 w D-25: wypada para `dribble_success_percentage` i `tackled_perecentage`,
+jedyna z dowodem zmiany definicji z tożsamości księgowej i z granicą zmiany
+pokrywającą się z granicą podziału. Pozostałe jedenaście zostaje z adnotacją.
+Wariant z przywróconą parą liczymy jako analizę wrażliwości.
 
 O-7. Czy filtr korelacyjny w ogóle wchodzi do Pipeline. Zmierzony koszt przy progu
 0,95 to 0,15 R² na modelu liniowym, a zysk leży w stabilności rankingu SHAP, czyli
 w W4. Rozstrzygnięcie wymaga zmierzenia obu stron na tej samej konfiguracji: tau
-Kendalla między rankingami z filtrem i bez. Termin: E5 razem z W4, ponieważ wcześniej
-brakuje drugiej połowy bilansu.
+Kendalla między rankingami z filtrem i bez. Termin: E9, razem z W4 — wcześniej brakuje
+drugiej połowy bilansu.
+
+Stan na dziś: filtr jest zaimplementowany w `src/trustml/models/pipeline.py` jako
+`FiltrKorelacyjny` i domyślnie wyłączony (`prog_korelacji=None`). Koszt po stronie
+dokładności mierzy wariant O-7 w `warianty.py`. Zysk po stronie stabilności rankingu
+dopisuje się w E9.
 
 ## Powiązane dokumenty
 

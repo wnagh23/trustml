@@ -10,6 +10,7 @@ wystandaryzowany raport w sześciu wymiarach: poprawność predykcyjna (W1), odp
 
 - `src/trustml/` — biblioteka, niezależna od dziedziny
 - `configs/` — protokół oceny zamrożony w plikach konfiguracyjnych
+- `models/` — wytrenowane modele, poza gitem
 - `case_study/football/` — pipeline danych dziedzinowych
 - `data/raw/` — źródła, tylko do odczytu, poza gitem (około 2,4 GB)
 - `data/processed/` — zbiór modelowy
@@ -72,6 +73,28 @@ grupująca dla GroupKFold, lista metryk, osie stratyfikacji i suma kontrolna pli
 `model.parquet`, którego dotyczą. Po każdym przebiegu pipeline'u zmieniającym zbiór
 modelowy trzeba wpisać tam nową sumę i przeliczyć wyniki — do tego czasu
 `tests/test_no_leakage.py` nie przechodzi.
+
+## Modele i wymiar W1
+
+```
+python -m case_study.football.modelowanie      # strojenie, uczenie, ocena
+python -m case_study.football.warianty         # analizy wrażliwości
+```
+
+Pierwsza komenda stroi trzy modele — Elastic Net, Random Forest i XGBoost —
+setką prób optuny na zbiorze treningowym, przez GroupKFold po zawodniku.
+Przebieg trwa kilkadziesiąt minut; liczbę prób można podać argumentem, na przykład
+`... modelowanie 5` przy diagnozowaniu. Zapisuje modele do `models/`, metryki do
+`reports/tables/e5_w1.csv`, dziennik prób do `e5_przebiegi.csv`, analizę reszt do
+`e5_reszty.csv` i metryczkę przebiegu do `e5_metryczka.json`.
+
+Druga komenda bierze najlepszy model z metryczki i liczy trzy warianty: cel
+zdeflowany zamiast nominalnego (D-04), zbiór cech z przywróconą parą wskaźników
+dryblingu (D-25) oraz filtr korelacyjny przy progu 0,95 (O-7). Wynik trafia do
+`reports/tables/e5_warianty.csv`.
+
+Metryki liczy ten sam kod, który policzył poziomy odniesienia w E4, więc wiersze
+z `e5_w1.csv` i `e4_baseline.csv` porównuje się wprost.
 
 ## Testy
 

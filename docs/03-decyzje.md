@@ -414,6 +414,104 @@ Wariant z rekalibracją poziomu przez indeks inflacji z etapu 9 nie daje nic: dl
 sezonów spoza treningu indeks jest płaskim przedłużeniem ostatniego współczynnika
 treningowego, więc predykcje byłyby identyczne co do liczby.
 
+## D-24 — korekta Duana wyłącznie przy kwotach, metryki na predykcjach surowych
+
+Status: przyjęta, zastępuje tabelę przypisania metryk z D-21
+
+D-21 kierowała MAE i MAPE na predykcje po korekcie. Pomiar na wszystkich czterech
+poziomach odniesienia pokazuje, że jest to błędne przypisanie. MAE na teście: 10,83
+wobec 11,75 miliona dla M0a, 9,98 wobec 11,01 dla M0b, 4,81 wobec 5,92 dla M0c.
+Korekta pogarsza tę miarę za każdym razem, bo średnia z wartości bezwzględnych
+osiąga minimum przy medianie warunkowej, a korekta podstawia pod nią wartość
+oczekiwaną.
+
+Wszystkie metryki liczymy na predykcjach surowych. Korekta Duana zostaje przy
+kwotach podawanych czytelnikowi: wycenie pojedynczego zawodnika w euro i sumie
+wycen składu.
+
+Sam mechanizm z D-21 zostaje w mocy i jest potrzebny. Suma predykcji podzielona
+przez sumę wartości rzeczywistych na teście wynosi 0,37 dla M0a i 0,46 dla M0b —
+wyceniając składy tymi poziomami, podalibyśmy mniej niż połowę prawdziwej wartości.
+Po korekcie stosunki wynoszą 0,87 i 0,97.
+
+Korektę trzeba jednak mierzyć zamiast stosować w ciemno. Dla M0c stosunek sum bez
+korekty wynosi 0,98, a po korekcie 1,17. Powód: M0c przepisuje prawdziwą cenę
+sprzed roku, więc jego predykcje mają już rozrzut rzeczywistego rozkładu, a korekta
+dokłada go drugi raz. Duan zakłada, że predykcja jest wygładzoną wartością
+oczekiwaną, i tylko dla takich predykcji działa zgodnie z wyprowadzeniem.
+
+Konsekwencja dla raportowania: każdy pomiar podaje `agregat` i `agregat_po_korekcie`,
+czyli stosunek sum bez korekty i z nią. Wartość bliska 1,0 oznacza model nieobciążony
+na poziomie zagregowanym, a wybór wariantu do cytowania w tekście wynika z tych
+dwóch liczb. Miara przydaje się również w W5 jako parytet obciążenia między grupami.
+
+Dołożona przy okazji kolumna `krotnosc` to `exp(RMSLE)`, czyli błąd logarytmiczny
+przełożony na czynnik mnożący. RMSLE 0,532 daje 1,70, co czyta się jako „typowo
+mylimy się 1,7 raza w górę albo w dół".
+
+## D-25 — cechy o zmienionej definicji: usuwamy parę dryblingu
+
+Status: przyjęta, zastępuje pytanie O-6
+
+`dribble_success_percentage` i `tackled_perecentage` wypadają ze zbioru cech
+modelowych. Pozostałe jedenaście cech z trwałym krokiem poziomu zostaje,
+z adnotacją w ograniczeniach pracy.
+
+Kryterium jest podwójne i tylko ta para spełnia oba warunki. Zmiana definicji jest
+udowodniona tożsamością księgową: próba dryblingu ma dwa zakończenia, więc oba
+wskaźniki sumują się do stu — w 98,7 procent wierszy do sezonu 2021-2022 i w 21,1
+procent od 2022-2023. Granica zmiany pokrywa się co do sezonu z granicą między
+treningiem a kalibracją, więc model uczyłby się jednej definicji na stu procentach
+treningu i był oceniany w drugiej na stu procentach kalibracji i testu.
+
+Pozostałe cechy z listy A11 łamią się wewnątrz treningu (`clearances_p90`,
+`tackles_won_p90`, `dispossessed_p90`, `interceptions_p90`) albo między kalibracją
+a testem (`switches_p90`, `recoveries_p90`). Model widzi wtedy oba reżimy po tej
+samej stronie podziału. Usunięcie ich kosztowałoby informację na podstawie samego
+podejrzenia, bez dowodu zmiany definicji.
+
+Przypadek graniczny: `successful_dribbler_tackle_percentage` ma krok +0,363
+odchylenia dokładnie na granicy podziału, bez dowodu z tożsamości. Zostaje
+w zbiorze i wchodzi do analizy wrażliwości razem z usuniętą parą.
+
+Konsekwencja: zbiór cech schodzi ze 105 na 103. Wariant z usuniętymi cechami
+przywróconymi liczymy jako analizę wrażliwości na najlepszym modelu, żeby koszt
+tej decyzji był zmierzony, a nie założony.
+
+## D-26 — imputacja mediana z flagą braku
+
+Status: przyjęta, zastępuje pytanie O-3
+
+Braki w kolumnach procentowych dostają imputację medianą oraz towarzyszącą kolumnę
+zero-jedynkową. Realizuje to `add_indicator=True` w `SimpleImputer` wewnątrz
+wspólnego Pipeline, czyli imputacja liczy się na foldzie uczącym (D-09).
+
+Braki są strukturalne — oznaczają mianownik równy zeru — i rozkładają się
+nierówno: 4,88 procent u obrońców wobec 0,17 u napastników. Sama mediana
+wprowadzałaby więc obciążenie grupowe, którego W5 nie umiałby oddzielić od
+obciążenia modelu.
+
+Koszt: kilka dodatkowych kolumn wejściowych. Zysk: fakt „prób nie było" zostaje
+w danych jako osobna informacja, a nie znika pod wartością wstawioną.
+
+## D-27 — śledzenie przebiegów w repozytorium zamiast MLflow
+
+Status: przyjęta, zastępuje punkt o MLflow z planu E5
+
+Każdy przebieg strojenia zapisuje `reports/tables/e5_przebiegi.csv` z wierszem na
+próbę optuny oraz `reports/tables/e5_metryczka.json` z ziarnem, hashem
+`model.parquet`, hashem `configs/split.yaml`, liczbą cech i najlepszymi
+hiperparametrami.
+
+Powód jest ten sam, dla którego powstał `manifest.json` w E2: informacja
+o przebiegu ma leżeć w repozytorium, w formacie czytelnym bez uruchamiania
+czegokolwiek, i wersjonować się razem z kodem. MLflow dokłada kilkadziesiąt
+zależności i katalog `mlruns/`, który i tak musiałby zostać poza gitem, przez co
+przebiegi przestałyby być częścią historii pracy.
+
+Konsekwencja: brak przeglądarki eksperymentów. Przy trzech modelach i jednym
+autorze porównanie robi się zapytaniem do CSV.
+
 ## Powiązane dokumenty
 
 - `01-projekt.md` — cel pracy, wymiary W1–W6, modele
