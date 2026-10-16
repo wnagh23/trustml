@@ -1,8 +1,6 @@
 """
-Podzial zbiorow i deflacja zmiennej celu.
-
-ETAP 8  podzial na trening / kalibracja / test / zbior_C
-ETAP 9  indeks inflacji i cele w skali logarytmicznej
+Etap 8: podzial na trening / kalibracja / test / zbior_C.
+Etap 9: indeks inflacji i cele w skali log.
 """
 
 from __future__ import annotations
@@ -26,24 +24,12 @@ from .parametry import (
 
 
 def etap_8_podziel(sezony: pd.DataFrame) -> pd.DataFrame:
-    """
-    Przypisuje kazdej parze zawodnik-sezon jeden z czterech zbiorow.
-
-    Podzial czasowy - losowy rozrzucilby tego samego zawodnika po treningu
-    i tescie, a jego wycena jest z roku na rok mocno skorelowana.
-
-    Przyjmuje:
-        sezony - tabela z etapu 7
-
-    Zwraca:
-        te sama tabele z kolumnami "podzial" i "znany_z_treningu".
-    """
+    """Dodaje kolumny "podzial" (podzial czasowy, D-16) i "znany_z_treningu" (D-12)."""
     print("\nETAP 8  podzial na trening / kalibracja / test / zbior_C")
 
     sezony = sezony.copy()
 
-    # Kolejnosc warunkow ma znaczenie: Primeira Liga jest pierwsza, wiec wygrywa
-    # niezaleznie od sezonu.
+    # Primeira Liga jest pierwsza, wiec trafia do zbioru C niezaleznie od sezonu
     warunki = [
         sezony["liga"] == LIGA_ZBIOR_C,
         sezony["season"].isin(SEZONY_TRENING),
@@ -71,31 +57,12 @@ def etap_8_podziel(sezony: pd.DataFrame) -> pd.DataFrame:
         "ta sama para w wiecej niz jednym zbiorze"
     )
 
-    # Ten sam zawodnik moze byc w treningu i w innym zbiorze, w roznych sezonach.
-    # Pary sa rozlaczne, wiec formalnie podzial jest czysty, ale model rozpoznaje
-    # zawodnika po kombinacji wzrostu, wieku, pozycji i profilu statystycznego -
-    # mimo ze player_id zostaje poza cechami. Zmierzone HistGradientBoostingiem:
-    #   test:    znani R2 0,68 | nowi R2 0,56
-    #   zbior_C: znani R2 0,51 | nowi R2 -0,50
-    # Przewaga zostaje po wyrownaniu wieku grup, wiec bierze sie z samej
-    # znajomosci zawodnika.
-    #
-    # Podzial zostaje taki, jaki jest - w praktyce wycenia sie zawodnikow,
-    # ktorych rynek juz zna. Ale przy raportowaniu: R2 na calym tescie jest
-    # wyzsze niz dla zawodnika nowego, a test ma 66% znanych wobec 9% w zbiorze
-    # C, wiec uczciwe porownanie dla W2 to nowi z nowymi.
-    #
-    # Zapisujemy to jako kolumne w zbiorze. Inaczej kazdy notatnik i kazdy modul
-    # ewaluacji odtwarzalby zbior player_id z treningu u siebie - wystarczy, ze
-    # raz zrobi to po nazwisku zamiast po id, i stratyfikacja przestaje byc
-    # porownywalna miedzy raportami.
-    # To metadana do analizy, trzymana poza zestawem cech modelu.
+    # Ten sam zawodnik bywa w treningu i w tescie (inne sezony). Flaga sluzy do
+    # raportowania wynikow osobno dla znanych i nowych (D-12); nie jest cecha.
     w_treningu = set(sezony.loc[sezony["podzial"] == "trening", "player_id"])
     sezony["znany_z_treningu"] = sezony["player_id"].isin(w_treningu)
 
-    # Wiersze treningowe oznaczamy jako False. Kazdy zawodnik z treningu bylby
-    # inaczej "znany sam sobie", a kolumna ma odpowiadac na pytanie: czy model
-    # widzial juz tego zawodnika, ZANIM dostal ten konkretny wiersz.
+    # w samym treningu flaga = False, inaczej kazdy bylby "znany sam sobie"
     sezony.loc[sezony["podzial"] == "trening", "znany_z_treningu"] = False
 
     print("\n  zawodnicy znani z treningu:")
@@ -115,19 +82,9 @@ def etap_8_podziel(sezony: pd.DataFrame) -> pd.DataFrame:
 
 def policz_indeks_inflacji(trening: pd.DataFrame) -> dict[str, float]:
     """
-    Lancuchowy indeks cen o stalym skladzie wiekowym.
+    Lancuchowy indeks cen o stalym skladzie wiek x pozycja, tylko na treningu.
 
-    Dla kazdej pary kolejnych sezonow porownuje srednia log(wartosc) w komorkach
-    wiek x pozycja i usrednia roznice wazone liczebnoscia. Porownujemy zawodnikow
-    w tym samym wieku, dobieranych osobno w kazdym sezonie - inaczej starzenie sie
-    mieszaloby sie z inflacja.
-
-    Przyjmuje:
-        trening - wylacznie wiersze treningowe; policzenie indeksu na wszystkich
-                  sezonach byloby wyciekiem ze zbioru testowego
-
-    Zwraca:
-        slownik {sezon: wspolczynnik}, pierwszy sezon ma 1.0.
+    Zwraca {sezon: wspolczynnik}, pierwszy sezon = 1.0.
     """
     dane = trening.copy()
     dane["log_wartosc"] = np.log(dane["market_value_in_eur"])
@@ -156,10 +113,8 @@ def policz_indeks_inflacji(trening: pd.DataFrame) -> dict[str, float]:
                     len(a) >= MIN_OBSERWACJI_KOMORKA
                     and len(b) >= MIN_OBSERWACJI_KOMORKA
                 ):
-                    # Srednia: TM wycenia w okraglych progach (123 rozne wartosci
-                    # w calym zbiorze), wiec mediana komorki o 60-140 obserwacjach
-                    # skacze miedzy progami i daje "inflacje" +60% tam, gdzie
-                    # rynek ledwie drgnal.
+                    # srednia, nie mediana: TM wycenia w okraglych progach i
+                    # mediana skacze miedzy nimi
                     roznice.append(b.mean() - a.mean())
                     wagi.append(len(a))
 
@@ -175,30 +130,17 @@ def policz_indeks_inflacji(trening: pd.DataFrame) -> dict[str, float]:
 
 
 def etap_9_deflacja(sezony: pd.DataFrame) -> pd.DataFrame:
-    """
-    Dokleja cel zdeflowany i logarytmy obu wersji celu.
-
-    Celem glownym jest log_market_value (nominalny), wersja realna zostaje jako
-    kolumna dodatkowa - powody w komentarzu przy jej wyliczeniu.
-
-    Przyjmuje:
-        sezony - tabela z etapu 8, z kolumna "podzial"
-
-    Zwraca:
-        tabele z market_value_real, log_market_value, log_market_value_real.
-    """
+    """Dodaje market_value_real, log_market_value i log_market_value_real (D-04)."""
     print("\nETAP 9  deflacja (indeks liczony tylko na treningu)")
 
     sezony = sezony.copy()
 
-    # Funkcja dostaje wylacznie trening - kalibracja, test i zbior C zostaja poza
-    # jej zasiegiem.
     trening = sezony[sezony["podzial"] == "trening"]
     print(f"\n  indeks liczony na {len(trening)} parach treningowych")
     wspolczynniki = policz_indeks_inflacji(trening)
 
-    # Sezony spoza treningu dostaja wspolczynnik ostatniego sezonu treningowego.
-    # Policzenie ich wlasnych wymagaloby zajrzenia do wycen ze zbioru testowego.
+    # sezony spoza treningu dostaja wspolczynnik ostatniego sezonu treningowego,
+    # inaczej uzylbym wycen ze zbioru testowego
     ostatni = wspolczynniki[max(wspolczynniki)]
     for sezon in sezony["season"].unique():
         wspolczynniki.setdefault(sezon, ostatni)
@@ -209,15 +151,9 @@ def etap_9_deflacja(sezony: pd.DataFrame) -> pd.DataFrame:
         zrodlo = "trening" if sezon in sezony_treningowe else "przedluzenie plaskie"
         print(f"    {sezon}  {wspolczynniki[sezon]:.4f}  ({zrodlo})")
 
-    # Inflacja w Big 5 siega 38% miedzy 2017-2018 a 2023-2024, a poziom testu
-    # lezy 18,4% powyzej treningu. Deflacja mimo to pogarsza wynik - test na
-    # HistGradientBoosting dal MAE 0,5757 wobec 0,5734 na celu nominalnym. Drzewa
-    # trzymaja sie zakresu treningu, wiec roznica poziomow przeklada sie
-    # na obciazenie slabiej, niz sugeruje porownanie srednich.
     sezony["market_value_real"] = sezony["market_value_in_eur"] / sezony["season"].map(
         wspolczynniki
     )
-    # log1p zamiast log - odporny na zero, gdyby kiedys przeszlo przez filtry.
     sezony["log_market_value"] = np.log1p(sezony["market_value_in_eur"])
     sezony["log_market_value_real"] = np.log1p(sezony["market_value_real"])
 
