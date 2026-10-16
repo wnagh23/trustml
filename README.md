@@ -5,8 +5,6 @@
 MSc thesis project, AGH University of Krakow (Computer Science – Data Science, defence planned for July 2027).
 Status: work in progress. The data pipeline, validation protocol and baselines are done; reliability dimensions are being built stage by stage (see [Roadmap](#roadmap)).
 
-> Polish version of this README: [README.pl.md](README.pl.md). Detailed project documentation in `docs/` is in Polish.
-
 ## The idea
 
 A single accuracy score hides most of what matters once a model is used in practice. `trustml` takes any scikit-learn–compatible model and produces a standardised report across six dimensions:
