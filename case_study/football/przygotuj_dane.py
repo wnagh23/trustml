@@ -1,23 +1,10 @@
 """
-Przygotowanie zbioru do modelowania predykcyjnego.
-
-Zrodla:
-    1. FBref (statystyki zawodnikow mecz po meczu, master.db)
-    2. Transfermarkt (wycena zawodnika z okolic 30 czerwca)
-
-Wyjscie: jeden wiersz na pare (zawodnik, sezon) z cechami opisujacymi jego gre
-w tym sezonie oraz wartoscia rynkowa jako zmienna celu.
-
-Skrypt konczy sie na zapisaniu plikow do data/processed/.
+Buduje zbior modelowy (zawodnik x sezon) z FBref i Transfermarktu.
 
     python -m case_study.football.przygotuj_dane
 
-Etapy sa rozdzielone na moduly:
-    zrodla.py    ETAP 1-2   wczytanie FBref, scalenie tabel
-    cechy.py     ETAP 3-5   parsowanie, agregacja do sezonu, per 90 minut
-    wycena.py    ETAP 6-7   crosswalk do TM, dolaczenie celu
-    zbiory.py    ETAP 8-9   podzial zbiorow, indeks inflacji
-    ten plik     ETAP 10    zapis wynikow
+Etapy 1-2 w zrodla.py, 3-5 w cechy.py, 6-7 w wycena.py, 8-9 w zbiory.py,
+etap 10 (zapis) tutaj.
 """
 
 from __future__ import annotations
@@ -42,24 +29,13 @@ from .zrodla import etap_1_wczytaj, etap_2_polacz
 
 
 def zbuduj_zbior_modelowy(sezony: pd.DataFrame) -> pd.DataFrame:
-    """
-    Wybiera z pelnej tabeli kolumny wchodzace do modelu.
-
-    Statystyki licznikowe wchodza wylacznie w wersji _p90 - surowe sumy mieszaja
-    jakosc zawodnika z liczba rozegranych minut i zostaja w pliku kontrolnym.
-
-    Przyjmuje:
-        sezony - tabela z etapu 9
-
-    Zwraca:
-        waski DataFrame gotowy do modelowania.
-    """
+    """Wybiera kolumny do modelu: klucze, metadane, cele i cechy (bez surowych sum)."""
     cechy_p90 = sorted(c for c in sezony.columns if c.endswith("_p90"))
     cechy_procentowe = sorted(WSKAZNIKI_PROCENTOWE)
 
     kolumny = [
         *KLUCZ_SEZON,
-        # metadane do analizy bledow, trzymane poza zestawem cech
+        # metadane, nie wchodza do modelu
         "name",
         "tm_player_id",
         "podzial",
@@ -77,8 +53,7 @@ def zbuduj_zbior_modelowy(sezony: pd.DataFrame) -> pd.DataFrame:
         "wzrost_cm",
         "minuty_sezon",
         "mecze",
-        # Kategoryczne zostaja tekstem - kodowanie ma sie dziac w Pipeline,
-        # zeby zestaw kategorii byl ten sam we wszystkich zbiorach.
+        # kategoryczne zostaja tekstem, koduje je Pipeline (D-10)
         "pozycja",
         "region",
         "liga",
@@ -94,26 +69,13 @@ def zbuduj_zbior_modelowy(sezony: pd.DataFrame) -> pd.DataFrame:
 def etap_10_zapisz(
     sezony: pd.DataFrame, wiersze_po_etapach: dict[str, int] | None = None
 ) -> pd.DataFrame:
-    """
-    Zapisuje pelny zbior kontrolny i waski zbior modelowy.
-
-    Parquet zachowuje typy kolumn i odroznia brak od zera. CSV przy ponad dwustu
-    kolumnach gubi typy, a braki zapisuje jako puste ciagi.
-
-    Przyjmuje:
-        sezony - tabela z etapu 9
-
-    Zwraca:
-        zbior modelowy.
-    """
+    """Zapisuje oba pliki parquet i manifest.json; zwraca zbior modelowy."""
     print("\nETAP 10  zapis plikow")
 
     KATALOG_WYJSCIA.mkdir(parents=True, exist_ok=True)
     sezony = sezony.copy()
 
-    # Wartosc rosnie mniej wiecej do 25 roku zycia i potem spada, wiec zaleznosc
-    # ma ksztalt paraboli. Drzewa wychwyca ja same, modelom liniowym trzeba ja podac
-    # jawnie - dzieki tej cesze porownanie rodzin modeli jest uczciwsze.
+    # kwadrat wieku dla modeli liniowych (wartosc rosnie do ok. 25 lat, potem spada)
     sezony["wiek_do_kw"] = sezony["wiek"] ** 2
 
     sciezka_pelny = KATALOG_WYJSCIA / "zawodnik_sezon.parquet"
@@ -155,7 +117,7 @@ def etap_10_zapisz(
         for kolumna, ile in braki.items():
             print(f"    {kolumna:42s} {ile:5d} ({100 * ile / len(model):4.1f}%)")
 
-    # Manifest na koncu, zeby objal odciski juz zapisanych plikow wynikowych.
+    # manifest na koncu, zeby objal sumy kontrolne zapisanych plikow
     wiersze_po_etapach = dict(wiersze_po_etapach or {})
     wiersze_po_etapach["etap_10_zbior_modelowy"] = len(model)
     sciezka_manifestu = zapisz_manifest(
@@ -169,12 +131,7 @@ def etap_10_zapisz(
 
 
 def main() -> pd.DataFrame:
-    """
-    Uruchamia caly pipeline i zwraca zbior modelowy.
-
-    Po drodze zlicza wiersze po kazdym etapie - te liczby trafiaja do manifestu
-    i sa najszybszym sposobem, zeby zobaczyc, gdzie dwa przebiegi sie rozeszly.
-    """
+    """Uruchamia caly pipeline; liczby wierszy po etapach trafiaja do manifestu."""
     wiersze: dict[str, int] = {}
 
     tabele = etap_1_wczytaj(SCIEZKA_DB)
