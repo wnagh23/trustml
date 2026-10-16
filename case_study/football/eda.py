@@ -1,29 +1,15 @@
 """
-Analiza eksploracyjna zbioru modelowego (etap E3).
+Analiza eksploracyjna (etap E3), jedna funkcja na pytanie A1-A12.
 
-Kazda funkcja w tym module odpowiada na jedno pytanie z listy E3 w `04-plan.md`,
-zapisuje figure do `reports/figures/eda/`, tabele do `reports/tables/eda/`
-i zwraca slownik liczb, ktore trafiaja do raportu `docs/05-eda.md`. Dzieki temu
-kazda liczba w raporcie ma zrodlo w uruchamialnym kodzie, zgodnie z zasada pracy
-z `01-projekt.md`.
-
-Uruchomienie calosci:
-
-    python -m case_study.football.uruchom_eda
-
-Zasada dostepu do zbioru C (D-14): cechy zbioru C sa tutaj analizowane swobodnie,
-bo pomiar przesuniecia rozkladow cech jest dostepny w kazdym wdrozeniu bez etykiet.
-Zmienna celu zbioru C pojawia sie wylacznie jako liczby juz zapisane w `02-dane.md`.
-Zbior testowy sluzy tu tylko do pomiaru przesuniecia cech - kazda ocena jakosci
-modelu w tym module liczy sie na zbiorze kalibracyjnym.
+Uruchomienie: python -m case_study.football.uruchom_eda
+Ze zbioru C uzywam tylko cech, bez celu (D-14). Jakosc modeli licze na kalibracji.
 """
 
 from __future__ import annotations
 
 import matplotlib
 
-# Backend "Agg" rysuje do pliku i nie probuje otwierac okna. Ustawienie musi
-# poprzedzac import pyplot, bo backend wybiera sie raz, przy inicjalizacji.
+# Agg zapisuje wykresy do pliku bez okna; musi byc ustawione przed importem pyplot
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
@@ -41,63 +27,42 @@ KATALOG_TABEL = KATALOG_REPO / "reports" / "tables" / "eda"
 
 # --- Parametry analizy ---
 
-# Progi, przy ktorych sprawdzamy redundancje cech. Filtr korelacyjny w E5 dostanie
-# jedna z tych wartosci, wiec liczymy koszt kazdej.
+# Progi korelacji do sprawdzenia redundancji cech.
 PROGI_KORELACJI = (0.99, 0.95, 0.90)
 
-# Prog, dla ktorego mierzymy, ile filtr korelacyjny faktycznie kupuje na jakosci.
+# Prog, dla ktorego mierze koszt filtra korelacyjnego (O-7).
 PROG_FILTRA_DO_POMIARU = 0.95
 
-# Prog laczenia cech w bloki przy grupowaniu hierarchicznym. Blok oznacza
-# zestaw cech o sredniej korelacji bezwzglednej co najmniej tej wartosci.
+# Bloki cech przy grupowaniu hierarchicznym: srednia |korelacja| >= 0.5.
 PROG_BLOKU_CECH = 0.5
 
-# Progi minut do analizy wrazliwosci. Wartosc 225 jest progiem obowiazujacym
-# (D-08), wiec ponizej niej dane w zbiorze modelowym juz nie istnieja.
+# Progi minut do analizy wrazliwosci; ponizej 225 danych juz nie ma (D-08).
 PROGI_MINUT = (225, 450, 900, 1350)
 
-# Liczba koszy w indeksie PSI. Dziesiec decyli to konwencja z monitoringu modeli
-# kredytowych, skad ta miara pochodzi.
+# PSI na 10 koszach i progi 0.10 / 0.25 - standardowe wartosci.
 KOSZE_PSI = 10
-
-# Progi interpretacyjne PSI, rowniez konwencjonalne.
 PSI_UMIARKOWANY = 0.10
 PSI_DUZY = 0.25
 
-# Kolejnosc sezonow do wykresow. Sortowanie alfabetyczne daje tu poprawna
-# kolejnosc chronologiczna, bo sezon zapisany jest jako "RRRR-RRRR".
 POZYCJE = ("DEF", "MID", "FOR")
 
 
 # --- Infrastruktura ---
 
-# Slownik zbierajacy wszystkie liczby, ktore trafia do raportu. Klucz jest
-# tekstowa nazwa faktu, wartosc - liczba albo krotki napis.
+# Wszystkie liczby do raportu; na koncu zapisywane do fakty.json.
 FAKTY: dict[str, object] = {}
 
 
 def zapisz_fakt(klucz: str, wartosc) -> None:
-    """
-    Odklada jedna liczbe do wspolnego slownika faktow.
-
-    Slownik jest zmienna modulowa, wiec funkcje analityczne moga do niego dopisywac
-    bez przekazywania go w argumentach. Na koncu przebiegu zrzucamy go do JSON-a,
-    zeby raport dalo sie zweryfikowac liczba po liczbie.
-    """
-    # numpy zwraca wlasne typy (np.float64), ktorych json nie umie zapisac.
-    # `item()` wyciaga z nich zwykly float albo int Pythona.
+    """Dopisuje liczbe do slownika FAKTY."""
+    # typy numpy (np.float64) nie przechodza przez json
     if hasattr(wartosc, "item"):
         wartosc = wartosc.item()
     FAKTY[klucz] = wartosc
 
 
 def ustaw_styl() -> None:
-    """
-    Wspolny styl figur. Wywolywane raz, na poczatku przebiegu.
-
-    `rcParams` to globalny slownik ustawien matplotlib - zmiana tutaj dziala
-    na wszystkie pozniej tworzone wykresy.
-    """
+    """Wspolny styl wykresow."""
     plt.rcParams.update(
         {
             "figure.dpi": 130,
@@ -119,7 +84,6 @@ def zapisz_figure(fig, nazwa: str) -> None:
     """Zapisuje figure pod `reports/figures/eda/<nazwa>.png` i zwalnia pamiec."""
     KATALOG_FIGUR.mkdir(parents=True, exist_ok=True)
     fig.savefig(KATALOG_FIGUR / f"{nazwa}.png")
-    # Bez close matplotlib trzyma kazda figure w pamieci do konca procesu.
     plt.close(fig)
     print(f"    figura  reports/figures/eda/{nazwa}.png")
 
@@ -132,14 +96,7 @@ def zapisz_tabele(tabela: pd.DataFrame, nazwa: str) -> None:
 
 
 def wczytaj() -> tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Wczytuje oba pliki z `data/processed/`.
-
-    Zwraca:
-        (model, sezony) - zbior modelowy oraz pelny zbior kontrolny z surowymi
-        sumami sezonowymi. Ten drugi jest potrzebny wszedzie tam, gdzie pytamy
-        o liczniki i mianowniki wskaznikow albo o date wyceny.
-    """
+    """Zwraca (model.parquet, zawodnik_sezon.parquet z surowymi sumami)."""
     model = pd.read_parquet(KATALOG_WYJSCIA / "model.parquet")
     sezony = pd.read_parquet(KATALOG_WYJSCIA / "zawodnik_sezon.parquet")
     return model, sezony
@@ -147,16 +104,9 @@ def wczytaj() -> tuple[pd.DataFrame, pd.DataFrame]:
 
 def kolumny_cech(model: pd.DataFrame) -> dict[str, list[str]]:
     """
-    Dzieli kolumny zbioru na bloki tematyczne.
+    Dzieli kolumny na grupy: p90, procentowe, liczbowe, kategoryczne.
 
-    Bloki wracaja wielokrotnie - przy korelacjach, przy dryfie i przy sufcie
-    informacyjnym - wiec wyznaczamy je raz, w jednym miejscu.
-
-    Wskazniki procentowe bierzemy z `WSKAZNIKI_PROCENTOWE`, a nie z dopasowania
-    nazwy do wzorca. Kolumna `tackled_perecentage` ma literowke w schemacie
-    zrodlowym, wiec `endswith("percentage")` znajduje siedem wskaznikow zamiast
-    osmiu i gubi akurat ten, ktory ma najwiecej brakow. Slownik z `parametry.py`
-    jest lista rozstrzygajaca.
+    Procentowe biore z WSKAZNIKI_PROCENTOWE, bo tackled_perecentage ma literowke.
     """
     procentowe = [k for k in WSKAZNIKI_PROCENTOWE if k in model.columns]
     return {
@@ -168,12 +118,7 @@ def kolumny_cech(model: pd.DataFrame) -> dict[str, list[str]]:
 
 
 def big5(model: pd.DataFrame) -> pd.DataFrame:
-    """
-    Zwraca same wiersze Big 5, czyli wszystko poza zbiorem C.
-
-    Wiekszosc analiz celu dotyczy wylacznie Big 5, bo cel zbioru C zostaje
-    zamkniety do eksperymentu koncowego (D-14).
-    """
+    """Wiersze Big 5, czyli bez zbioru C (D-14)."""
     return model[model["podzial"] != "zbior_C"]
 
 
@@ -181,12 +126,7 @@ def big5(model: pd.DataFrame) -> pd.DataFrame:
 
 
 def a1_rozklad_celu(model: pd.DataFrame) -> None:
-    """
-    Rozklad celu w trzech wersjach: nominalnej, logarytmicznej i zdeflowanej.
-
-    Odpowiada na pierwszy punkt E3. Sprawdzamy symetrie po log1p, ktora jest
-    uzasadnieniem D-03, oraz ziarnistosc siatki wycen Transfermarktu.
-    """
+    """A1: rozklad celu (nominalny, log1p, zdeflowany) i ziarnistosc wycen TM."""
     print("\nA1  rozklad zmiennej celu")
     b = big5(model)
 
@@ -202,8 +142,7 @@ def a1_rozklad_celu(model: pd.DataFrame) -> None:
             f"kurtoza {seria.kurtosis():+7.3f}"
         )
 
-    # Ziarnistosc celu. `value_counts(normalize=True)` daje udzialy zamiast liczb,
-    # a `cumsum` po posortowaniu malejaco mowi, ile progow zbiera zadany udzial masy.
+    # ziarnistosc: ile progow wyceny zbiera dany udzial obserwacji
     udzialy = b["market_value_in_eur"].value_counts(normalize=True)
     skumulowane = udzialy.sort_values(ascending=False).cumsum()
     zapisz_fakt("a1_unikalnych_progow", int(b["market_value_in_eur"].nunique()))
@@ -226,7 +165,7 @@ def a1_rozklad_celu(model: pd.DataFrame) -> None:
         xlabel="wartość [mln EUR]",
         ylabel="liczba par zawodnik-sezon",
     )
-    # Skala logarytmiczna na osi Y, bo ogon nominalny jest dlugi i plaski.
+    # os Y w skali log, inaczej ogon jest niewidoczny
     osie[0].set_yscale("log")
 
     osie[1].hist(b["log_market_value"], bins=60, color="#55A868")
@@ -243,7 +182,6 @@ def a1_rozklad_celu(model: pd.DataFrame) -> None:
     fig.suptitle("A1. Rozkład zmiennej celu, Big 5", y=1.04)
     zapisz_figure(fig, "a1_rozklad_celu")
 
-    # Osobna figura na ziarnistosc: dwadziescia najczestszych progow.
     fig, os_ = plt.subplots(figsize=(7, 3.6))
     naj = udzialy.head(20).sort_index()
     os_.bar(range(len(naj)), naj.to_numpy() * 100, color="#4C72B0")
@@ -263,13 +201,9 @@ def a1_rozklad_celu(model: pd.DataFrame) -> None:
 
 def a2_deflacja(model: pd.DataFrame) -> None:
     """
-    Czy po zdeflowaniu poziom celu jest plaski w czasie.
+    A2: czy po deflacji srednia log-wartosc jest plaska w kolejnych sezonach.
 
-    Test jest prosty: liczymy srednia log-wartosci w kazdym sezonie, osobno dla
-    celu nominalnego i realnego, i porownujemy rozstepy. Indeks liczony jest
-    wylacznie na treningu (etap 9), wiec plaskosc obowiazuje z gory na sezonach
-    treningowych. To, co zostaje poza treningiem, jest cena przedluzenia
-    ostatniego wspolczynnika na sezony pozniejsze.
+    Indeks jest liczony tylko na treningu, wiec poza treningiem poziom moze uciekac.
     """
     print("\nA2  skutecznosc deflacji")
     b = big5(model)
@@ -350,8 +284,7 @@ def a2_deflacja(model: pd.DataFrame) -> None:
         label="cel zdeflowany",
         color="#C44E52",
     )
-    # Pionowa linia w miejscu, gdzie konczy sie trening i zaczyna plaskie
-    # przedluzenie wspolczynnika deflacji.
+    # koniec treningu
     os_.axvline(len(sezony_treningowe) - 0.5, color="black", linestyle=":", linewidth=1)
     os_.text(
         len(sezony_treningowe) - 0.45,
@@ -376,17 +309,9 @@ def a2_deflacja(model: pd.DataFrame) -> None:
 
 def a3_krzywa_wieku(model: pd.DataFrame) -> None:
     """
-    Ksztalt zaleznosci wiek - wartosc oraz uzasadnienie cechy `wiek_do_kw`.
+    A3: krzywa wiek-wartosc. Czy parabola (wiek_do_kw) ma sens?
 
-    Plan E3 stawia pytanie wprost: jesli ksztalt odbiega od paraboli, cecha
-    `wiek_do_kw` jest ozdobnikiem i trzeba to napisac. Mierzymy to liczbowo,
-    porownujac trzy dopasowania na tych samych danych:
-      - prosta, czyli sam wiek,
-      - parabola, czyli wiek i wiek do kwadratu,
-      - srednia w kazdym roczniku, czyli model nieparametryczny wyznaczajacy
-        sufit osiagalny dowolna funkcja samego wieku.
-    Iloraz R2 paraboli i R2 sufitu mowi, jaka czesc informacji o wieku parabola
-    faktycznie zbiera.
+    Porownuje R2 prostej, paraboli i srednich w rocznikach (najlepsze, co da sam wiek).
     """
     print("\nA3  krzywa wiek-wartosc")
     b = big5(model)
@@ -396,19 +321,14 @@ def a3_krzywa_wieku(model: pd.DataFrame) -> None:
         """Udzial wariancji celu wyjasniony przez podana prognoze."""
         return float(1 - np.var(y - prognoza) / np.var(y))
 
-    # `np.polyfit(x, y, stopien)` dopasowuje wielomian metoda najmniejszych
-    # kwadratow i zwraca wspolczynniki od najwyzszej potegi. `np.polyval` liczy
-    # z nich wartosci wielomianu w zadanych punktach.
     prosta = np.polyfit(x, y, 1)
     parabola = np.polyfit(x, y, 2)
-    # `transform("mean")` podstawia kazdemu wierszowi srednia jego grupy
-    # i zachowuje dlugosc serii, wiec wychodzi gotowa prognoza nieparametryczna.
     sufit = b.groupby("wiek")["log_market_value"].transform("mean").to_numpy()
 
     r2_prosta = r2(np.polyval(prosta, x))
     r2_parabola = r2(np.polyval(parabola, x))
     r2_sufit = r2(sufit)
-    # Wierzcholek paraboli a*w^2 + b*w + c lezy w punkcie -b / (2a).
+    # wierzcholek paraboli: -b / (2a)
     wierzcholek = float(-parabola[1] / (2 * parabola[0]))
 
     zapisz_fakt("a3_r2_prosta", round(r2_prosta, 4))
@@ -434,9 +354,7 @@ def a3_krzywa_wieku(model: pd.DataFrame) -> None:
     )
     zapisz_tabele(rocznik.round(3), "a3_krzywa_wieku")
 
-    # Najmlodsi zawodnicy sa w tym zbiorze drozsi niz zawodnicy w szczycie
-    # kariery. Prog 225 minut przepuszcza z rocznika osiemnastolatkow wylacznie
-    # tych, ktorzy dostaja gre w Big 5, czyli talenty juz wycenione wysoko.
+    # 18-latkowie wychodza drozsi od 25-latkow - efekt progu 225 minut
     liczni = rocznik[rocznik["par"] >= 30]
     for wiek in (18, 25):
         zapisz_fakt(
@@ -498,17 +416,7 @@ def a3_krzywa_wieku(model: pd.DataFrame) -> None:
 
 
 def a4_struktura_panelu(model: pd.DataFrame) -> None:
-    """
-    Ilu zawodnikow w ilu sezonach, czyli wejscie do GroupKFold w E4.
-
-    Grupowanie po `player_id` ma sens wtedy, gdy grup jest duzo wiecej niz foldow,
-    a jednoczesnie czesc zawodnikow powtarza sie na tyle czesto, ze podzial losowy
-    faktycznie rozrzucilby ich po foldach. Obie liczby sa tutaj.
-
-    Przy okazji mierzymy lepkosc wyceny rok do roku. Cecha `market_value_prev`
-    zostala odcieta modelom (D-05), a sama sila tej zaleznosci opisuje zadanie
-    i uzasadnia baseline M0c z D-06.
-    """
+    """A4: ile sezonow na zawodnika (pod GroupKFold) i korelacja wyceny rok do roku."""
     print("\nA4  struktura panelu")
 
     sezonow_na_zawodnika = model.groupby("player_id")["season"].nunique()
@@ -539,9 +447,8 @@ def a4_struktura_panelu(model: pd.DataFrame) -> None:
         f"({len(trening) / grupy_treningowe:.2f} wiersza na zawodnika)"
     )
 
-    # Lepkosc wyceny. Numerujemy sezony rosnaco, kopie tabeli przesuwamy o jeden
-    # sezon do przodu i laczymy - zostaja pary (zawodnik, sezon t) z dolaczona
-    # wycena z sezonu t-1.
+    # pary (zawodnik, t) z wycena z poprzedniego sezonu w danych; uwaga: numeracja
+    # pozycyjna, wiec 2018-2019 i 2020-2021 licza sie tu jako sasiednie
     kolejnosc = {s: i for i, s in enumerate(sorted(model["season"].unique()))}
     biezacy = model[["player_id", "season", "market_value_in_eur", "podzial"]].copy()
     biezacy["t"] = biezacy["season"].map(kolejnosc)
