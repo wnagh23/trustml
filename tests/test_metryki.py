@@ -1,13 +1,4 @@
-"""
-Testy metryk i poziomow odniesienia (etap E4).
-
-    pytest tests/test_metryki.py -v
-
-Metryki sa tu jedynym narzedziem pomiarowym calej pracy, wiec sprawdzamy je na
-przykladach o znanym wyniku. Najwazniejszy jest test korekty Duana: sprawdza, ze
-po powrocie ze skali logarytmicznej srednia predykcji zgadza sie ze srednia
-rzeczywista, czego samo `expm1` nie zapewnia.
-"""
+"""Testy metryk, korekty Duana i poziomow odniesienia na malych przykladach."""
 
 from __future__ import annotations
 
@@ -33,7 +24,7 @@ from trustml.evaluation import (
 
 @pytest.fixture
 def panel() -> pd.DataFrame:
-    """Maly panel: czterech zawodnikow, trzy sezony, wartosci w skali log1p."""
+    """Czterech zawodnikow, trzy sezony, cel w skali log1p."""
     wiersze = [
         ("a", "2021-2022", "MID", "L1", 10.0),
         ("a", "2022-2023", "MID", "L1", 11.0),
@@ -72,7 +63,7 @@ def test_rmsle_to_rmse_w_skali_logarytmicznej():
 
 
 def test_mdape_na_znanym_przykladzie():
-    """Predykcja dwa razy wyzsza od prawdy daje blad wzgledny 100 procent."""
+    """Predykcja 2x za wysoka daje blad 100%."""
     prawda = np.array([1_000_000.0, 4_000_000.0, 2_000_000.0])
     y = np.log1p(prawda)
     pred = np.log(2 * prawda)  # log, bo do_euro odejmuje jedynke z powrotem
@@ -108,13 +99,7 @@ def test_do_euro_bez_korekty_to_expm1():
 
 
 def test_duan_odzyskuje_srednia_w_euro():
-    """
-    Sedno D-21: exp(sredniej z logarytmow) daje srednia geometryczna.
-
-    Budujemy dane, w ktorych prawda jest rozkladem lognormalnym wokol stalej
-    predykcji. Bez korekty srednia predykcji lezy wyraznie ponizej sredniej
-    rzeczywistej; po korekcie obie sie schodza.
-    """
+    """Bez korekty srednia w euro jest za niska, po korekcie zgadza sie z prawda (D-21)."""
     losowy = np.random.default_rng(7)
     srodek, rozrzut, n = 15.0, 0.8, 200_000
     y = srodek + losowy.normal(0.0, rozrzut, n)
@@ -124,19 +109,14 @@ def test_duan_odzyskuje_srednia_w_euro():
     bez_korekty = do_euro(pred).mean()
     duan = wspolczynnik_duana(y - pred)
 
-    # teoretyczna wartosc wspolczynnika dla rozkladu normalnego reszt
+    # dla reszt N(0, s^2) wspolczynnik wynosi exp(s^2 / 2)
     assert duan == pytest.approx(np.exp(rozrzut**2 / 2), rel=0.01)
     assert bez_korekty < 0.85 * srednia_prawdy
     assert do_euro(pred, duan).mean() == pytest.approx(srednia_prawdy, rel=0.01)
 
 
 def test_korekta_nie_dotyka_zadnej_metryki():
-    """
-    Duan wchodzi wylacznie do agregatu (D-24).
-
-    Wszystkie metryki bledu - RMSLE, MdAPE, MAE - osiagaja minimum przy medianie
-    warunkowej, wiec korekta w gore moze je tylko pogorszyc.
-    """
+    """Duan zmienia tylko agregat_po_korekcie (D-24)."""
     y = np.array([10.0, 12.0, 14.0])
     pred = np.array([10.5, 11.0, 14.5])
     bez = metryki(y, pred, duan=1.0)
@@ -154,7 +134,7 @@ def test_krotnosc_to_wykladnik_z_rmsle():
 
 
 def test_agregat_wylapuje_systematyczne_zanizenie():
-    """Predykcja polowy prawdziwej wartosci daje agregat 0,5."""
+    """Predykcja polowy wartosci daje agregat 0.5."""
     prawda = np.array([2_000_000.0, 8_000_000.0, 30_000_000.0])
     y = np.log1p(prawda)
     pred = np.log(prawda / 2)
@@ -194,7 +174,7 @@ def test_mediana_globalna_jest_stala(panel: pd.DataFrame):
 
 
 def test_mediana_komorki_uzupelnia_nieznane_komorki(panel: pd.DataFrame):
-    """Komorka nieobecna w treningu dostaje mediane globalna i zostaje oznaczona."""
+    """Komorka spoza treningu dostaje mediane globalna i flage."""
     trening = panel[panel["season"] != "2023-2024"]
     pred, uzupelnione = mediana_komorki(trening, panel, "y", ["pozycja", "liga"])
 
