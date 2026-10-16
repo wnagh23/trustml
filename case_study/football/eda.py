@@ -860,7 +860,7 @@ def a6_korelacje(model: pd.DataFrame) -> None:
     skumulowana = np.cumsum(wartosci_wlasne) / wartosci_wlasne.sum()
     skladowych_80 = int((skumulowana < 0.80).sum() + 1)
     skladowych_90 = int((skumulowana < 0.90).sum() + 1)
-    # (suma wartosci wlasnych)^2 / suma kwadratow: k dla k niezaleznych cech, 1 dla jednej
+    # wymiarowosc partycypacyjna: (suma wartosci wlasnych)^2 / suma ich kwadratow
     wymiarowosc = float(wartosci_wlasne.sum() ** 2 / np.sum(wartosci_wlasne**2))
     zapisz_fakt("a6_skladowych_na_80_proc", skladowych_80)
     zapisz_fakt("a6_skladowych_na_90_proc", skladowych_90)
@@ -939,26 +939,14 @@ def a6_korelacje(model: pd.DataFrame) -> None:
 
 
 def a7_mapa_brakow(model: pd.DataFrame) -> None:
-    """
-    Czy braki rozkladaja sie losowo, czy koncentruja w jednej grupie.
-
-    Pytanie ma konsekwencje dla W5: imputacja mediana w cechach, ktorych braki
-    siedza prawie wylacznie u obroncow, podstawi obroncom wartosc typowa dla
-    calej populacji i wprowadzi obciazenie grupowe.
-
-    Test chi-kwadrat sprawdza, czy udzial brakow rozni sie miedzy pozycjami
-    bardziej, niz wynikaloby to z losowego rozrzutu.
-    """
+    """A7: czy braki sa rozlozone losowo miedzy pozycjami (test chi-kwadrat)."""
     print("\nA7  mapa brakow")
     kolumny_z_brakami = [k for k in model.columns if model[k].isna().any()]
     wiersze = []
 
     for kolumna in kolumny_z_brakami:
         brak = model[kolumna].isna()
-        # `crosstab` buduje tabele licznosci pozycja x (brak / obecny).
         tabela_kontyngencji = pd.crosstab(model["pozycja"], brak)
-        # `chi2_contingency` zwraca statystyke, p-wartosc, stopnie swobody
-        # i tabele oczekiwana; interesuje nas druga pozycja.
         p_wartosc = float(stats.chi2_contingency(tabela_kontyngencji)[1])
         udzial = brak.groupby(model["pozycja"]).mean() * 100
         wiersze.append(
@@ -1025,17 +1013,9 @@ def a7_mapa_brakow(model: pd.DataFrame) -> None:
 
 def a8_prog_minut(model: pd.DataFrame) -> None:
     """
-    Jak prog minut zmienia liczebnosc, sklad i wariancje cech.
+    A8: jak prog minut zmienia liczebnosc, sklad i zmiennosc cech _p90.
 
-    Ograniczenie do odnotowania: zbior modelowy jest juz odfiltrowany progiem 225
-    (D-08), wiec warianty ponizej tej wartosci wymagalyby ponownego przebiegu
-    pipeline z innym `MIN_MINUT`. Tutaj mierzymy kierunek i sile efektu na
-    progach od 225 w gore, co wystarcza do oceny, czy prog jest parametrem
-    obojetnym dla wnioskow.
-
-    Wariancja cech `_p90` mierzona jest wspolczynnikiem zmiennosci, czyli
-    odchyleniem podzielonym przez srednia. Jest bezwymiarowy, wiec da sie go
-    usrednic po cechach o roznych jednostkach.
+    Tylko progi od 225 w gore - nizej dane sa juz odfiltrowane.
     """
     print("\nA8  wrazliwosc na prog minut")
     b = big5(model)
@@ -1044,7 +1024,7 @@ def a8_prog_minut(model: pd.DataFrame) -> None:
 
     for prog in PROGI_MINUT:
         podzbior = b[b["minuty_sezon"] >= prog]
-        # Wspolczynnik zmiennosci liczony cecha po cesze, potem mediana po cechach.
+        # wspolczynnik zmiennosci (std / srednia) dla kazdej cechy, potem mediana
         zmiennosc = (podzbior[p90].std() / podzbior[p90].mean().abs()).median()
         wiersze.append(
             {
@@ -1111,16 +1091,8 @@ def a8_prog_minut(model: pd.DataFrame) -> None:
 
 def a9_sufit_informacyjny(model: pd.DataFrame) -> None:
     """
-    Ile wariancji celu tlumaczy sam kontekst, zanim dolozymy statystyki gry.
-
-    Budujemy zagniezdzone bloki cech i po kazdym dolozeniu mierzymy R2. Rosnaca
-    roznica miedzy blokami mowi, ile wnosi kazda porcja informacji, a ostatni
-    wiersz podaje realistyczne oczekiwanie wobec modeli z E5.
-
-    Ocena idzie na zbiorze kalibracyjnym. Zbior testowy zostaje nietkniety przez
-    caly etap E3, zeby protokol z E4 mogl go uzyc jako danych naprawde
-    niewidzianych. Kalibracja ma tu role tymczasowego zbioru oceny; w E5 wroci
-    do swojej wlasciwej roli z W3.
+    A9: R2 na kalibracji po dokladaniu kolejnych blokow cech
+    (wiek, pozycja i liga, region i noga, minuty, statystyki gry).
     """
     print("\nA9  sufit informacyjny")
     from sklearn.compose import ColumnTransformer
@@ -1137,14 +1109,7 @@ def a9_sufit_informacyjny(model: pd.DataFrame) -> None:
     y_tr, y_ka = trening["log_market_value"], kalibracja["log_market_value"]
 
     def ocen(num: list[str], kat: list[str], nazwa: str, estymator=None) -> dict:
-        """
-        Uczy prosty potok na treningu i ocenia go na kalibracji.
-
-        ColumnTransformer przepuszcza kolumny liczbowe przez imputacje mediana
-        i standaryzacje, a kategoryczne przez kodowanie zerojedynkowe. Cala
-        obrobka siedzi wewnatrz Pipeline, wiec fituje sie wylacznie na treningu -
-        dokladnie tak, jak wymaga D-09.
-        """
+        """Uczy prosty Pipeline na treningu i zwraca R2 i MAE na kalibracji."""
         kroki = []
         if num:
             kroki.append(
@@ -1161,9 +1126,6 @@ def a9_sufit_informacyjny(model: pd.DataFrame) -> None:
             )
         if kat:
             kroki.append(("kategoryczne", OneHotEncoder(handle_unknown="ignore"), kat))
-        # `np.logspace(-2, 4, 25)` daje 25 wartosci alfa rozlozonych rownomiernie
-        # w skali logarytmicznej od 0,01 do 10 000; RidgeCV wybiera z nich
-        # najlepsza walidacja krzyzowa na treningu.
         est = estymator or RidgeCV(alphas=np.logspace(-2, 4, 25))
         potok = Pipeline([("przygotowanie", ColumnTransformer(kroki)), ("model", est)])
         potok.fit(trening[num + kat], y_tr)
@@ -1180,7 +1142,7 @@ def a9_sufit_informacyjny(model: pd.DataFrame) -> None:
     wszystkie_num = bloki["liczbowe"] + bloki["p90"] + bloki["procentowe"]
     wszystkie_kat = bloki["kategoryczne"]
 
-    # Mediana treningu jako punkt zerowy - odpowiednik baseline M0a z D-06.
+    # punkt zerowy: mediana treningu (jak M0a)
     mediana = float(y_tr.median())
     wiersze = [
         {
@@ -1223,7 +1185,6 @@ def a9_sufit_informacyjny(model: pd.DataFrame) -> None:
             HistGradientBoostingRegressor(random_state=0),
         )
     )
-    # Kolejnosc odwrocona: same statystyki gry, bez kontekstu i bez wolumenu.
     wiersze.append(
         ocen(
             bloki["p90"] + bloki["procentowe"], [], "same statystyki gry, bez kontekstu"
@@ -1284,20 +1245,14 @@ def a9_sufit_informacyjny(model: pd.DataFrame) -> None:
 
 def psi(odniesienie: pd.Series, porownanie: pd.Series, kosze: int = KOSZE_PSI) -> float:
     """
-    Population Stability Index miedzy dwoma rozkladami jednej cechy.
+    PSI: suma (b - a) * log(b / a) po koszach z decyli rozkladu `odniesienie`.
 
-    Kosze wyznaczamy decylami rozkladu odniesienia, potem liczymy udzialy obu
-    prob w kazdym koszu i sumujemy (udzial_b - udzial_a) * log(udzial_b / udzial_a).
-    Miara jest symetryczna wzgledem zamiany znaku roznicy i rosnie wraz
-    z rozjechaniem sie rozkladow. Konwencja: ponizej 0,1 stabilnie, 0,1-0,25
-    umiarkowanie, powyzej 0,25 duzo.
+    Ponizej 0.1 stabilnie, 0.1-0.25 umiarkowanie, powyzej 0.25 duze przesuniecie.
     """
     krawedzie = np.nanpercentile(odniesienie, np.linspace(0, 100, kosze + 1))
-    # Skrajne kosze rozciagamy do nieskonczonosci, zeby zlapac wartosci spoza
-    # zakresu proby odniesienia.
+    # skrajne kosze do nieskonczonosci, zeby zlapac wartosci spoza zakresu
     krawedzie[0], krawedzie[-1] = -np.inf, np.inf
-    # Cechy o wielu powtarzajacych sie wartosciach daja zduplikowane krawedzie,
-    # ktore `np.histogram` odrzuca. `np.unique` zostawia rosnaca, unikalna liste.
+    # przy powtarzajacych sie wartosciach krawedzie sie dubluja
     krawedzie = np.unique(krawedzie)
     if len(krawedzie) < 3:
         return float("nan")
@@ -1307,7 +1262,7 @@ def psi(odniesienie: pd.Series, porownanie: pd.Series, kosze: int = KOSZE_PSI) -
     udzial_b = (
         np.histogram(porownanie.dropna(), krawedzie)[0] / porownanie.notna().sum()
     )
-    # Pusty kosz dalby logarytm z zera, wiec podlogujemy udzialy mala stala.
+    # pusty kosz dalby log(0)
     udzial_a = np.clip(udzial_a, 1e-4, None)
     udzial_b = np.clip(udzial_b, 1e-4, None)
     return float(np.sum((udzial_b - udzial_a) * np.log(udzial_b / udzial_a)))
@@ -1315,12 +1270,8 @@ def psi(odniesienie: pd.Series, porownanie: pd.Series, kosze: int = KOSZE_PSI) -
 
 def a10_dryf_cech(model: pd.DataFrame) -> None:
     """
-    Przesuniecie rozkladow cech: test wobec zbioru C oraz trening wobec testu.
-
-    Dwa pomiary obok siebie odpowiadaja na pytanie, ktore z przesuniec jest
-    wieksze: przejscie do innej ligi czy sam uplyw czasu wewnatrz Big 5.
-    Zgodnie z D-14 dotykamy wylacznie cech zbioru C; jego zmienna celu zostaje
-    zamknieta do eksperymentu koncowego.
+    A10: przesuniecie rozkladow cech (PSI, test KS): test vs zbior C
+    i trening vs test. Ze zbioru C tylko cechy (D-14).
     """
     print("\nA10  przesuniecie rozkladow cech")
     bloki = kolumny_cech(model)
@@ -1336,9 +1287,6 @@ def a10_dryf_cech(model: pd.DataFrame) -> None:
 
     wiersze = []
     for cecha in cechy:
-        # `ks_2samp` porownuje dwa rozklady empiryczne; statystyka to najwieksza
-        # pionowa odleglosc miedzy ich dystrybuantami, wiec mierzy w tych samych
-        # jednostkach dla kazdej cechy.
         ks = stats.ks_2samp(test[cecha].dropna(), zbior_c[cecha].dropna())
         wiersze.append(
             {
@@ -1419,22 +1367,15 @@ def a10_dryf_cech(model: pd.DataFrame) -> None:
     osie[0].axhline(PSI_DUZY, color="#C44E52", linewidth=0.8)
     osie[0].axhline(PSI_UMIARKOWANY, color="#DD8452", linewidth=0.8)
 
-    # Obie osie w tej samej skali, bo przerywana przekatna sluzy do porownania
-    # jednego przesuniecia z drugim. Zakres wyznaczamy przed podpisami, bo od
-    # niego zalezy strona, po ktorej podpis sie miesci.
+    # ta sama skala na obu osiach, zeby przekatna miala sens
     zakres = (-0.02, granica + 0.06)
 
-    # Cechy o najwiekszym przesunieciu leza blisko siebie, wiec podpisy stawiane
-    # wprost na punktach nachodza na siebie. Rozsuwamy je pionowo o stala liczbe
-    # punktow typograficznych i laczymy z punktem cienka kreska; `textcoords`
-    # z wartoscia "offset points" liczy przesuniecie w jednostkach rysunku,
-    # niezaleznie od skali osi.
+    # podpisy rozsuniete w pionie, bo punkty leza blisko siebie
     do_podpisania = tabela.head(4).index.tolist() + [najwiekszy_czas]
     for numer, cecha in enumerate(do_podpisania):
         x = float(tabela.loc[cecha, "psi_trening_vs_test"])
         y = float(tabela.loc[cecha, "psi_test_vs_C"])
-        # Punkt lezacy w prawej polowie wykresu dostaje podpis po lewej stronie,
-        # inaczej tekst wyszedlby poza os i wszedl na sasiedni panel.
+        # punkty z prawej polowy podpisuje z lewej strony, zeby tekst nie wyszedl za os
         w_prawej_polowie = x > (zakres[0] + zakres[1]) / 2
         osie[0].annotate(
             cecha,
@@ -1467,16 +1408,8 @@ def a10_dryf_cech(model: pd.DataFrame) -> None:
 
 def a11_zlom_definicyjny(model: pd.DataFrame) -> None:
     """
-    Cechy, ktorych poziom skacze miedzy sezonami mocniej, niz tlumaczy to gra.
-
-    Kazda cecha dostaje srednia sezonowa, a te standaryzujemy jej wlasnym
-    odchyleniem miedzy zawodnikami. Dzieki temu skoki roznych cech sa
-    porownywalne. Cecha, ktorej srednia przesuwa sie miedzy dwoma sasiednimi
-    sezonami o ulamek odchylenia populacyjnego, zmienila najpewniej definicje
-    u dostawcy danych, bo sama gra nie zmienia sie tak szybko.
-
-    Konsekwencja jest powazna: przy podziale czasowym model uczy sie cechy
-    w jednej definicji, a ocenia w drugiej.
+    A11: skoki srednich sezonowych cech (w odchyleniach std), zeby znalezc cechy,
+    ktore mogly zmienic definicje u dostawcy danych.
     """
     print("\nA11  zlom definicyjny w zrodle")
     bloki = kolumny_cech(model)
@@ -1485,21 +1418,11 @@ def a11_zlom_definicyjny(model: pd.DataFrame) -> None:
     sezony = sorted(b["season"].unique())
 
     srednie = b.groupby("season")[cechy].mean().loc[sezony]
-    # Odchylenie miedzy zawodnikami, liczone na calym Big 5 - jednostka odniesienia.
     odchylenia = b[cechy].std()
-    # `diff()` liczy roznice miedzy kolejnymi wierszami, czyli miedzy sezonami.
     skoki = (srednie.diff() / odchylenia).abs()
 
-    # Rozrozniamy dwa ksztalty zmiany, bo maja rozne konsekwencje.
-    #
-    # Trwaly krok to roznica miedzy poziomem dwoch ostatnich a dwoch pierwszych
-    # sezonow. Taki ksztalt pasuje do zmiany definicji u dostawcy: poziom
-    # przesuwa sie raz i zostaje. Przy podziale czasowym model uczy sie wtedy
-    # cechy w jednej definicji, a ocenia w drugiej.
-    #
-    # Anomalia jednosezonowa to odchylenie sezonu 2020-2021 od sredniej jego
-    # dwoch sasiadow. Taki ksztalt pasuje do warunkow konkretnego sezonu; ten
-    # akurat rozegrano przy pustych trybunach i przy scisnietym terminarzu.
+    # trwaly krok: 2 ostatnie sezony vs 2 pierwsze (pasuje do zmiany definicji);
+    # anomalia: 2020-2021 vs sredni poziom sasiadow (pasuje do sezonu pandemii)
     okres_wczesny = [sezony[0], sezony[1]]
     okres_pozny = [sezony[-2], sezony[-1]]
     sezon_pandemiczny = "2020-2021"
@@ -1516,7 +1439,6 @@ def a11_zlom_definicyjny(model: pd.DataFrame) -> None:
         anomalia = (
             srednie.loc[sezon_pandemiczny, cecha] - srednie.loc[sasiedzi, cecha].mean()
         ) / odchylenia[cecha]
-        # Calkowita zmiana od pierwszego do ostatniego sezonu, w procentach.
         zmiana = 100 * (srednie[cecha].iloc[-1] / srednie[cecha].iloc[0] - 1)
         wiersze.append(
             {
@@ -1549,8 +1471,7 @@ def a11_zlom_definicyjny(model: pd.DataFrame) -> None:
         int((tabela["najwiekszy_skok_sd"] > 0.2).sum()),
     )
 
-    # Ile cech ma najwiekszy skok w sasiedztwie sezonu pandemicznego. `str.contains`
-    # sprawdza obecnosc napisu w kazdym wierszu kolumny tekstowej.
+    # ile cech ma najwiekszy skok obok sezonu 2020-2021
     przy_pandemii = int(tabela["miedzy_sezonami"].str.contains(sezon_pandemiczny).sum())
     zapisz_fakt("a11_cech_ze_skokiem_przy_2020_2021", przy_pandemii)
     zapisz_fakt(
@@ -1587,11 +1508,8 @@ def a11_zlom_definicyjny(model: pd.DataFrame) -> None:
         f"{int(tabela['anomalia_2020_2021_sd'].abs().gt(0.2).sum())} cech"
     )
 
-    # Dowod wprost dla najsilniejszego przypadku. Proba dryblingu ma dwa mozliwe
-    # zakonczenia - powodzenie albo odbior - wiec oba wskazniki powinny sumowac
-    # sie do stu. Sprawdzamy, czy ta tozsamosc obowiazuje w kazdym sezonie.
-    # Jesli przestaje obowiazywac od konkretnego sezonu, to dostawca dolozyl
-    # trzecia kategorie zakonczenia i zmienil tym samym znaczenie obu kolumn.
+    # drybling konczy sie powodzeniem albo odbiorem, wiec oba wskazniki powinny
+    # sumowac sie do 100 - sprawdzam to sezon po sezonie
     para = b.dropna(subset=["dribble_success_percentage", "tackled_perecentage"])
     suma = para["dribble_success_percentage"] + para["tackled_perecentage"]
     tozsamosc = pd.DataFrame(
@@ -1603,8 +1521,6 @@ def a11_zlom_definicyjny(model: pd.DataFrame) -> None:
                 ["dribble_success_percentage", "tackled_perecentage"]
             ]
             .corr()
-            # `unstack` rozklada wielopoziomowy indeks na kolumny, a potem
-            # wyciagamy jedna komorke macierzy korelacji dla kazdego sezonu.
             .unstack()["dribble_success_percentage"]["tackled_perecentage"],
         }
     )
@@ -1632,9 +1548,7 @@ def a11_zlom_definicyjny(model: pd.DataFrame) -> None:
     )
     zapisz_fakt("a11_granica_zmiany_definicji", f"{ostatni_trening} -> {pierwszy_po}")
 
-    # Trzy cechy o najwiekszym skoku plus dwie najstabilniejsze jako tlo
-    # porownawcze. Cechy kontrolne wybieramy z danych, bo intuicyjny wybor
-    # trafil na cechy, ktore same okazaly sie niestabilne.
+    # 3 cechy z najwiekszym skokiem i 2 najstabilniejsze dla porownania
     kontrolne = tabela.nsmallest(2, "najwiekszy_skok_sd").index.tolist()
     do_wykresu = tabela.head(3).index.tolist() + kontrolne
     fig, osie = plt.subplots(1, len(do_wykresu), figsize=(3 * len(do_wykresu), 3.2))
@@ -1650,26 +1564,17 @@ def a11_zlom_definicyjny(model: pd.DataFrame) -> None:
     )
     zapisz_figure(fig, "a11_zlom_definicyjny")
 
-    # Osobno: sumy surowe z pliku kontrolnego pokazuja, czy skok idzie z licznika,
-    # czy z mianownika. Liczby doklada funkcja ciekawostek.
-
 
 # --- A12  ciekawostki ---
 
 
 def a12_ciekawostki(model: pd.DataFrame, sezony: pd.DataFrame) -> None:
-    """
-    Fakty nieoczywiste: mechanika zrodla, redundancje i zaskakujace zaleznosci.
-
-    Kazdy z tych pomiarow wyszedl przy okazji innego pytania i zostaje tutaj,
-    bo zmienia sposob czytania zbioru.
-    """
+    """A12: drobne obserwacje o danych, ktore wyszly przy innych analizach."""
     print("\nA12  ciekawostki")
     b = big5(model)
     bloki = kolumny_cech(model)
 
-    # 1. Fale wycen. Transfermarkt aktualizuje wyceny zbiorowo, w kilku dniach
-    # w roku, wiec "data wyceny" jest data akcji redakcyjnej.
+    # 1. TM aktualizuje wyceny hurtowo, w kilku dniach w roku
     daty = pd.to_datetime(sezony["data_wyceny"])
     licznosc_dat = daty.dt.strftime("%Y-%m-%d").value_counts()
     zapisz_fakt("a12_unikalnych_dat_wyceny", int(licznosc_dat.size))
@@ -1685,9 +1590,7 @@ def a12_ciekawostki(model: pd.DataFrame, sezony: pd.DataFrame) -> None:
         f"{100 * licznosc_dat.head(20).sum() / len(daty):.1f}% wszystkich wycen"
     )
 
-    # 2. Para kolumn, ktora przetrwala odsiew redundancji z etapu 1. FBref
-    # obiecuje roznice miedzy dotknieciami ogolem a dotknieciami przy pilce
-    # w grze, a w danych ta roznica prawie nie istnieje.
+    # 2. total_touches i live_ball_touches sa prawie identyczne
     roznica = sezony["total_touches"] - sezony["live_ball_touches"]
     zapisz_fakt(
         "a12_touches_identycznych_proc", round(100 * float((roznica == 0).mean()), 1)
@@ -1704,12 +1607,8 @@ def a12_ciekawostki(model: pd.DataFrame, sezony: pd.DataFrame) -> None:
         f"{roznica.mean():.2f} dotkniecia na sezon"
     )
 
-    # 2b. Druga para bliznaczych kolumn, tym razem z definicji. Proba dryblingu
-    # konczy sie albo powodzeniem, albo odbiorem, wiec oba wskazniki licza to samo
-    # zdarzenie z dwoch stron i sumuja sie do stu. Zostaje niewielka reszta na
-    # przypadki trzecie, na przyklad przerwanie akcji faulem.
+    # 2b. wskazniki dryblingu sumuja sie do 100 (na calym zbiorze)
     wskazniki = model[["dribble_success_percentage", "tackled_perecentage"]].dropna()
-    # `sum(axis=1)` sumuje wzdluz wierszy, czyli dodaje obie kolumny do siebie.
     suma_wskaznikow = wskazniki.sum(axis=1)
     zapisz_fakt(
         "a12_drybling_suma_rowna_100_proc",
@@ -1731,10 +1630,8 @@ def a12_ciekawostki(model: pd.DataFrame, sezony: pd.DataFrame) -> None:
         f"(srednia sumy {suma_wskaznikow.mean():.2f})"
     )
 
-    # 3. Symetria ksiegowa danych zdarzeniowych. Kazdy udany odbior przy
-    # dryblingu jest jednoczesnie strata dla dryblujacego, wiec sumy obu kolumn
-    # musza sie zgadzac na poziomie ligi, choc na poziomie zawodnika opisuja
-    # zupelnie rozne osoby.
+    # 3. suma tackled i dribblers_tackled w lidze powinna byc taka sama
+    # (to samo zdarzenie widziane od dwoch zawodnikow)
     symetria = sezony.groupby(["liga", "season"])[
         ["tackled", "dribblers_tackled"]
     ].sum()
@@ -1756,8 +1653,7 @@ def a12_ciekawostki(model: pd.DataFrame, sezony: pd.DataFrame) -> None:
         f"{sezony['tackled'].corr(sezony['dribblers_tackled']):.3f}"
     )
 
-    # 4. Ranking korelacji cech z celem. Wolumen gry bije wszystkie statystyki
-    # jakosciowe, co jest istotne dla interpretacji rankingow SHAP w W4.
+    # 4. korelacje cech z celem
     kandydaci = (
         bloki["p90"]
         + bloki["procentowe"]
@@ -1790,8 +1686,7 @@ def a12_ciekawostki(model: pd.DataFrame, sezony: pd.DataFrame) -> None:
         f"({korelacje.drop(['minuty_sezon', 'mecze']).iloc[0]:+.3f})"
     )
 
-    # 5. Wzrost. Globalnie korelacja z wartoscia jest zerowa, a wewnatrz pozycji
-    # zmienia znak - przyklad efektu Simpsona na tym zbiorze.
+    # 5. wzrost: globalnie korelacja ~0, wewnatrz pozycji zmienia znak (Simpson)
     d = b[b["wzrost_cm"].notna()]
     zapisz_fakt(
         "a12_wzrost_korelacja_globalna",
@@ -1810,14 +1705,13 @@ def a12_ciekawostki(model: pd.DataFrame, sezony: pd.DataFrame) -> None:
         f"FOR {d[d.pozycja == 'FOR']['wzrost_cm'].corr(d[d.pozycja == 'FOR']['log_market_value']):+.3f}"
     )
 
-    # 6. Sklad osi "znani / nowi" z D-12 - liczby wchodza do protokolu w E4.
+    # 6. udzial zawodnikow znanych z treningu (D-12)
     for zbior in ["kalibracja", "test", "zbior_C"]:
         pod = model[model["podzial"] == zbior]
         zapisz_fakt(
             f"a12_udzial_znanych_{zbior}",
             round(100 * float(pod["znany_z_treningu"].mean()), 1),
         )
-    # Zawodnicy wystepujacy i w Big 5, i w Primeira Lidze.
     w_big5 = set(big5(model)["player_id"])
     w_c = set(model.loc[model["podzial"] == "zbior_C", "player_id"])
     zapisz_fakt("a12_zawodnikow_w_obu_dziedzinach", len(w_big5 & w_c))
