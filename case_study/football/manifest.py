@@ -1,12 +1,6 @@
 """
-Metryczka uruchomienia pipeline'u.
-
-Zapisuje wszystko, co pozwala odtworzyc zbior i sprawdzic, czy dwa przebiegi
-dotyczyly tych samych danych: odciski plikow wejsciowych, wersje bibliotek,
-parametry i liczby wierszy po kazdym etapie.
-
-Dzieki temu pytanie "czemu dzis wyszlo 13 640 par wobec 13 709" ma odpowiedz
-w pliku: widac, czy zmienil sie prog, biblioteka, czy plik zrodlowy.
+Manifest przebiegu pipeline'u: SHA-256 plikow wejsciowych i wyjsciowych,
+wersje bibliotek, parametry i liczby wierszy po etapach.
 """
 
 from __future__ import annotations
@@ -25,19 +19,7 @@ from . import parametry as par
 
 
 def policz_sha256(sciezka: Path, kawalek: int = 1024 * 1024) -> str:
-    """
-    Liczy odcisk SHA-256 pliku.
-
-    Czyta kawalkami, bo master.db ma 211 MB i wczytanie go w calosci do pamieci
-    byloby marnotrawstwem.
-
-    Przyjmuje:
-        sciezka - plik do zahaszowania
-        kawalek - rozmiar porcji w bajtach
-
-    Zwraca:
-        odcisk jako 64 znaki szesnastkowe.
-    """
+    """Liczy SHA-256 pliku porcjami (master.db ma ponad 200 MB)."""
     skrot = hashlib.sha256()
     with sciezka.open("rb") as plik:
         while porcja := plik.read(kawalek):
@@ -46,15 +28,7 @@ def policz_sha256(sciezka: Path, kawalek: int = 1024 * 1024) -> str:
 
 
 def opisz_plik(sciezka: Path) -> dict:
-    """
-    Zwraca odcisk, rozmiar i date modyfikacji pliku.
-
-    Przyjmuje:
-        sciezka - plik wejsciowy albo wyjsciowy
-
-    Zwraca:
-        slownik z metadanymi; przy braku pliku samo {"brak": True}.
-    """
+    """Zwraca SHA-256, rozmiar i date modyfikacji pliku albo {"brak": True}."""
     if not sciezka.exists():
         return {"brak": True}
     dane = sciezka.stat()
@@ -68,24 +42,14 @@ def opisz_plik(sciezka: Path) -> dict:
 
 
 def zbierz_parametry() -> dict:
-    """
-    Zbiera wszystkie stale z modulu parametry.
-
-    Bierzemy nazwy pisane wielkimi literami - taka jest konwencja stalych
-    w Pythonie, wiec lista aktualizuje sie sama, gdy dojdzie nowy parametr.
-    Wartosci nieserializowalne (sciezki, zbiory) zamieniamy na tekst i listy.
-
-    Zwraca:
-        slownik {nazwa: wartosc} gotowy do zapisania w JSON.
-    """
+    """Zbiera stale (nazwy wielkimi literami) z parametry.py w postaci do JSON."""
     zebrane = {}
     for nazwa in dir(par):
         if not nazwa.isupper():
             continue
         wartosc = getattr(par, nazwa)
         if isinstance(wartosc, Path):
-            # Sciezki zapisujemy wzglednie - absolutne zdradzalyby uklad dyskow
-            # i roznilyby sie miedzy maszynami przy porownywaniu manifestow.
+            # sciezki wzgledne, zeby manifesty z roznych komputerow dalo sie porownac
             try:
                 wartosc = str(wartosc.relative_to(par.KATALOG_REPO))
             except ValueError:
@@ -101,16 +65,7 @@ def zbierz_parametry() -> dict:
 
 
 def zbuduj_manifest(wiersze_po_etapach: dict[str, int], pliki_wyjsciowe: dict) -> dict:
-    """
-    Sklada manifest z metadanych srodowiska, danych i przebiegu.
-
-    Przyjmuje:
-        wiersze_po_etapach - licznik wierszy zebrany w trakcie przebiegu
-        pliki_wyjsciowe    - sciezki zapisanych plikow
-
-    Zwraca:
-        slownik gotowy do zapisania jako JSON.
-    """
+    """Sklada slownik manifestu z danych o srodowisku, plikach i przebiegu."""
     wejscie = {
         "master.db": par.SCIEZKA_DB,
         "players.csv": par.SCIEZKA_TM / "players.csv",
@@ -131,8 +86,7 @@ def zbuduj_manifest(wiersze_po_etapach: dict[str, int], pliki_wyjsciowe: dict) -
         "pliki_wyjsciowe": {n: opisz_plik(s) for n, s in pliki_wyjsciowe.items()},
     }
 
-    # Prowieniencja FBref z audytu archiwow, jesli zostal uruchomiony. To ona
-    # mowi, skad wziela sie master.db - sama baza przychodzi bez metadanych.
+    # wynik scripts/audyt_zrodel.py - skad pochodzi master.db
     audyt = par.KATALOG_REPO / "docs" / "zrodla_fbref.json"
     if audyt.exists():
         dane = json.loads(audyt.read_text(encoding="utf-8"))
@@ -149,16 +103,7 @@ def zbuduj_manifest(wiersze_po_etapach: dict[str, int], pliki_wyjsciowe: dict) -
 
 
 def zapisz_manifest(wiersze_po_etapach: dict[str, int], pliki_wyjsciowe: dict) -> Path:
-    """
-    Buduje manifest i zapisuje go obok plikow wynikowych.
-
-    Przyjmuje:
-        wiersze_po_etapach - licznik wierszy z przebiegu
-        pliki_wyjsciowe    - sciezki zapisanych plikow
-
-    Zwraca:
-        sciezke zapisanego manifestu.
-    """
+    """Zapisuje manifest.json w data/processed/ i zwraca jego sciezke."""
     manifest = zbuduj_manifest(wiersze_po_etapach, pliki_wyjsciowe)
     sciezka = par.KATALOG_WYJSCIA / "manifest.json"
     sciezka.write_text(
