@@ -191,7 +191,7 @@ KODY_EUROPA = frozenset(
 
 # Wskaznik: (licznik, kolumny mianownika). Licze sume licznikow / sume mianownikow
 # w sezonie, nie srednia z procentow z meczow.
-# Jawna lista, bo tackled_perecentage ma literowke w zrodle i nie lapie sie na "percent".
+# Jawna lista, bo tackled_perecentage ma w zrodle literowke.
 WSKAZNIKI_PROCENTOWE = {
     "completion_percentage": ("total_completed", ["total_attempted"]),
     "short_completion_percentage": ("short_completed", ["short_attempted"]),

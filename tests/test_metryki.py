@@ -99,7 +99,7 @@ def test_do_euro_bez_korekty_to_expm1():
 
 
 def test_duan_odzyskuje_srednia_w_euro():
-    """Bez korekty srednia w euro jest za niska, po korekcie zgadza sie z prawda (D-21)."""
+    """Bez korekty srednia w euro jest za niska, po korekcie sie zgadza (D-21)."""
     losowy = np.random.default_rng(7)
     srodek, rozrzut, n = 15.0, 0.8, 200_000
     y = srodek + losowy.normal(0.0, rozrzut, n)

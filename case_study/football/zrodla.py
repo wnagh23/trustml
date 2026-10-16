@@ -23,7 +23,7 @@ from .parametry import (
 
 
 def wczytaj_tabele(polaczenie: sqlite3.Connection, nazwa: str) -> pd.DataFrame:
-    """Wczytuje tabele z master.db, usuwa identyczne wiersze i sprawdza unikalnosc klucza."""
+    """Wczytuje tabele z master.db, usuwa duplikaty i sprawdza unikalnosc klucza."""
     tabela = pd.read_sql(f'SELECT * FROM "{nazwa}"', polaczenie)
 
     przed = len(tabela)
