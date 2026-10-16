@@ -1,31 +1,8 @@
 """
-Metryki jakosci regresji - wymiar W1.
+Metryki regresji (W1). Cel i predykcje sa w skali log1p(euro).
 
-Zmienna celu zyje w skali log1p(euro) i model uczy sie wlasnie jej. Wszystkie
-metryki licza sie na predykcjach surowych, czyli po zwyklym `expm1` tam, gdzie
-wynik ma byc w euro. Powod: RMSLE, MdAPE i MAE osiagaja minimum przy medianie
-warunkowej, wiec podstawienie pod nie wartosci oczekiwanej pogarsza je z definicji
-(D-24, zmierzone na wszystkich poziomach odniesienia).
-
-Korekta Duana zostaje przy kwotach, ktore podaje sie czytelnikowi: wycena
-pojedynczego zawodnika w euro i suma wycen skladu. Mechanizm: exp(sredniej
-z logarytmow) daje srednia geometryczna, ktora na rozkladzie skosnym lezy ponizej
-sredniej arytmetycznej, wiec suma predykcji po samym `expm1` bywa razaco za niska
-- dla mediany w komorce wychodzilo 46 procent sumy prawdziwych wycen (D-21).
-
-Zeby dalo sie sprawdzic, czy korekta pomaga akurat temu modelowi, kazdy pomiar
-raportuje dwie liczby: `agregat` i `agregat_po_korekcie`, czyli sume predykcji
-podzielona przez sume prawdy, bez korekty i z nia. Wartosc bliska 1,0 oznacza
-model nieobciazony na poziomie zagregowanym. Dla poziomu M0c korekta psula ten
-stosunek z 0,98 na 1,17, bo M0c przepisuje prawdziwa cene i ma juz wlasciwy
-rozrzut - stad wymog mierzenia zamiast stosowania w ciemno.
-
-Kolumna `krotnosc` to exp(RMSLE), czyli blad logarytmiczny przelozony na czynnik
-mnozacy: 1,70 znaczy "typowo mylimy sie 1,7 raza w gore albo w dol".
-
-Funkcja `ocen` wymaga podania osi stratyfikacji (D-12). Jedna liczba dla calego
-zbioru chowa fakt, ze model zachowuje sie inaczej na zawodnikach znanych
-z treningu niz na nowych - na zbiorze C roznica siegala R2 0,51 wobec -0,50.
+Metryki licze na predykcjach bez korekty Duana (D-24). Korekta wchodzi tylko
+do `agregat_po_korekcie`, czyli do sum wycen w euro.
 """
 
 from __future__ import annotations
@@ -35,10 +12,6 @@ from collections.abc import Mapping
 import numpy as np
 import pandas as pd
 
-# Kolejnosc kolumn w raportach. RMSLE i MdAPE sa glowne (D-15), R2 i MAE
-# pomocnicze, MAPE wylacznie do porownan z wczesniejszymi podejsciami - dzieli
-# przez wartosc rzeczywista, wiec na skosnym rozkladzie mierzy glownie zachowanie
-# modelu na tanich zawodnikach.
 KOLUMNY_METRYK = (
     "n",
     "rmsle",
@@ -53,13 +26,7 @@ KOLUMNY_METRYK = (
 
 
 def _przygotuj(y_log, pred_log) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Sprowadza oba wejscia do plaskich tablic float i sprawdza ich kompletnosc.
-
-    Brak w predykcji jest bledem, a nie sytuacja do cichego pominiecia: baseline
-    M0c nie ma czego przepisac dla zawodnika bez poprzedniego sezonu i decyzja,
-    co z takim wierszem zrobic, nalezy do wolajacego (D-06).
-    """
+    """Zamienia wejscia na plaskie tablice float i sprawdza, czy nie ma brakow."""
     y = np.asarray(y_log, dtype=float).ravel()
     p = np.asarray(pred_log, dtype=float).ravel()
     if y.shape != p.shape:
@@ -77,18 +44,7 @@ def _przygotuj(y_log, pred_log) -> tuple[np.ndarray, np.ndarray]:
 
 
 def wspolczynnik_duana(reszty_log) -> float:
-    """
-    Liczy wspolczynnik korekty Duana ze srednich reszt w skali logarytmicznej.
-
-    Reszty musza pochodzic ze zbioru treningowego. Policzenie ich na tescie
-    wymagaloby etykiet testowych, czyli byloby wyciekiem.
-
-    Przyjmuje:
-        reszty_log - y_log minus predykcja, oba w skali log1p
-
-    Zwraca:
-        skalar, typowo tuz powyzej 1,0.
-    """
+    """Wspolczynnik Duana: srednia z exp(reszt). Reszty tylko z treningu."""
     r = np.asarray(reszty_log, dtype=float).ravel()
     if r.size == 0:
         raise ValueError("puste reszty")
@@ -98,36 +54,19 @@ def wspolczynnik_duana(reszty_log) -> float:
 
 
 def do_euro(pred_log, duan: float = 1.0) -> np.ndarray:
-    """
-    Wraca ze skali log1p do euro, opcjonalnie z korekta Duana.
-
-    Wzor bierze sie z rozlozenia celu na predykcje i reszte: log1p(y) = pred + e,
-    czyli y = exp(pred) * exp(e) - 1. Odruchowe `expm1(pred) * duan` przemnozyloby
-    rowniez te jedynke i jest formalnie zle.
-
-    Przyjmuje:
-        pred_log - predykcja w skali log1p
-        duan     - wspolczynnik z `wspolczynnik_duana`; 1.0 oznacza brak korekty
-
-    Zwraca:
-        tablice wartosci w euro.
-    """
+    """Zamienia predykcje z log1p na euro; `duan` = 1.0 oznacza brak korekty."""
+    # log1p(y) = pred + e, wiec y = exp(pred) * exp(e) - 1; mnozymy przed odjeciem 1
     return np.exp(np.asarray(pred_log, dtype=float).ravel()) * float(duan) - 1.0
 
 
 def rmsle(y_log, pred_log) -> float:
-    """
-    Pierwiastek ze sredniego kwadratu bledu w skali logarytmicznej.
-
-    Cel jest juz zapisany jako log1p(euro), wiec RMSLE sprowadza sie do RMSE
-    liczonego w tej samej skali, w ktorej pracuje model.
-    """
+    """RMSE w skali log1p, czyli RMSLE w euro."""
     y, p = _przygotuj(y_log, pred_log)
     return float(np.sqrt(np.mean((p - y) ** 2)))
 
 
 def r2_log(y_log, pred_log) -> float:
-    """Udzial wariancji celu wyjasniony przez predykcje, w skali logarytmicznej."""
+    """R2 w skali logarytmicznej."""
     y, p = _przygotuj(y_log, pred_log)
     calkowita = float(np.sum((y - y.mean()) ** 2))
     if calkowita == 0.0:
@@ -136,11 +75,7 @@ def r2_log(y_log, pred_log) -> float:
 
 
 def mdape(y_log, pred_log) -> float:
-    """
-    Mediana bezwzglednego bledu wzglednego w procentach, bez korekty Duana.
-
-    Czyta sie po ludzku: polowa wycen miesci sie w tylu procentach od prawdy.
-    """
+    """Mediana bezwzglednego bledu procentowego w euro."""
     y, p = _przygotuj(y_log, pred_log)
     prawda = np.expm1(y)
     if not (prawda > 0).all():
@@ -149,75 +84,31 @@ def mdape(y_log, pred_log) -> float:
 
 
 def mape(y_log, pred_log) -> float:
-    """
-    Sredni bezwzgledny blad wzgledny w procentach. Miara wadliwa, patrz D-15.
-
-    Zanizenie ma sufit stu procent, zawyzenie sufitu nie ma, wiec model
-    optymalizowany pod te miare uczy sie systematycznie zanizac. Raportujemy ja
-    wylacznie do porownania z wczesniejszymi podejsciami.
-    """
+    """Sredni bezwzgledny blad procentowy. Tylko do porownan (D-15)."""
     y, p = _przygotuj(y_log, pred_log)
     prawda = np.expm1(y)
     return float(100.0 * np.mean(np.abs(do_euro(p) - prawda) / prawda))
 
 
 def mae_euro(y_log, pred_log) -> float:
-    """
-    Sredni bezwzgledny blad w euro.
-
-    Bez korekty Duana: srednia z wartosci bezwzglednych osiaga minimum przy
-    medianie warunkowej, wiec podstawienie wartosci oczekiwanej pogarsza te miare
-    z definicji. Zmierzone na wszystkich czterech poziomach odniesienia (D-24).
-    """
+    """Sredni bezwzgledny blad w euro, bez korekty Duana (D-24)."""
     y, p = _przygotuj(y_log, pred_log)
     return float(np.mean(np.abs(do_euro(p) - np.expm1(y))))
 
 
 def krotnosc_bledu(y_log, pred_log) -> float:
-    """
-    Przeklada RMSLE na czynnik mnozacy, zeby dalo sie go czytac bez logarytmow.
-
-    Wynik 1,70 znaczy "typowo mylimy sie 1,7 raza", czyli predykcja lezy mniej
-    wiecej miedzy 59 a 170 procent prawdy. Na euro tego przelozyc sie nie da,
-    bo blad logarytmiczny jest bledem wzglednym - te same 0,53 to +-1,6 mln
-    u rezerwowego i +-35 mln u gwiazdy.
-    """
+    """exp(RMSLE): o ile razy typowo mylimy sie w gore albo w dol."""
     return float(np.exp(rmsle(y_log, pred_log)))
 
 
 def skala_agregatu(y_log, pred_log, duan: float = 1.0) -> float:
-    """
-    Suma predykcji podzielona przez sume wartosci rzeczywistych, w euro.
-
-    Mierzy obciazenie na poziomie zagregowanym: 0,46 oznacza, ze wyceniajac tym
-    modelem sklad, podalibysmy niecala polowe jego prawdziwej wartosci. Jest to
-    jedyne miejsce, w ktorym korekta Duana ma sens, i jednoczesnie kryterium
-    tego, czy dla danego modelu w ogole jest potrzebna (D-24).
-
-    Przyjmuje:
-        y_log    - cel w skali log1p
-        pred_log - predykcja w tej samej skali
-        duan     - wspolczynnik korekty; 1.0 oznacza pomiar bez niej
-
-    Zwraca:
-        stosunek sum, gdzie 1,0 oznacza brak obciazenia.
-    """
+    """Suma predykcji / suma prawdziwych wartosci w euro; 1.0 = brak obciazenia."""
     y, p = _przygotuj(y_log, pred_log)
     return float(do_euro(p, duan).sum() / np.expm1(y).sum())
 
 
 def metryki(y_log, pred_log, duan: float = 1.0) -> dict[str, float]:
-    """
-    Liczy komplet metryk dla jednego zestawu predykcji.
-
-    Przyjmuje:
-        y_log    - cel w skali log1p
-        pred_log - predykcja w tej samej skali
-        duan     - wspolczynnik Duana; wchodzi wylacznie do agregat_po_korekcie
-
-    Zwraca:
-        slownik o kluczach z KOLUMNY_METRYK.
-    """
+    """Liczy wszystkie metryki z KOLUMNY_METRYK dla jednego zestawu predykcji."""
     y, p = _przygotuj(y_log, pred_log)
     return {
         "n": int(y.size),
@@ -241,24 +132,9 @@ def ocen(
     etykieta: str = "",
 ) -> pd.DataFrame:
     """
-    Liczy metryki dla calosci i osobno w kazdej grupie na kazdej osi.
+    Liczy metryki dla calosci i dla kazdej grupy na kazdej osi z `grupy` (D-12).
 
-    Parametr `grupy` jest obowiazkowy (D-12). Pusty slownik jest dopuszczalny,
-    ale musi zostac wpisany swiadomie - chodzi o to, zeby stratyfikacja nie
-    ginela przez zapomnienie.
-
-    Przyjmuje:
-        y_log    - cel w skali log1p
-        pred_log - predykcja w tej samej skali
-        grupy    - {nazwa osi: wartosci dla kazdego wiersza}, na przyklad
-                   {"znany_z_treningu": ..., "pozycja": ...}
-        duan     - wspolczynnik Duana, liczony na resztach treningowych; wchodzi
-                   wylacznie do kolumny agregat_po_korekcie
-        etykieta - nazwa modelu, trafia do kolumny "model"
-
-    Zwraca:
-        ramke z kolumnami model, os, grupa, duan i metrykami; pierwszy wiersz
-        opisuje zawsze calosc zbioru.
+    `grupy` to {nazwa osi: wartosci dla wierszy}. Pierwszy wiersz wyniku to calosc.
     """
     y, p = _przygotuj(y_log, pred_log)
 
