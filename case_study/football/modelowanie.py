@@ -1,33 +1,10 @@
 """
-Modele M1-M3 i wymiar W1 (etap E5).
+Etap E5: strojenie, uczenie i ocena modeli M1-M3 (wymiar W1).
 
-    python -m case_study.football.modelowanie
+    python -m case_study.football.modelowanie [liczba_prob]
 
-Trzy modele na tym samym Pipeline, strojone optuna wylacznie na zbiorze
-treningowym przez GroupKFold po zawodniku. Ocena idzie przez `trustml.evaluation`,
-czyli tym samym kodem, ktory policzyl poziomy odniesienia w E4 - wyniki sa wiec
-wprost porownywalne z `reports/tables/e4_baseline.csv`.
-
-Kolejnosc dostepu do zbiorow: strojenie na treningu, biezaca ocena i early
-stopping na kalibracji, test dotykany raz, na koncu przebiegu. Zbior C zostaje
-nietkniety do E11.
-
-Rozstrzygniecia dziedzinowe zaszyte w tym module:
-
-O-6 (D-25). Para wskaznikow dryblingu wypada ze zbioru cech. Zmiana definicji
-u dostawcy jest tam udowodniona tozsamoscia ksiegowa - suma obu wskaznikow rowna
-sie stu w 98,7 procent wierszy do sezonu 2021-2022 i w 21,1 procent od 2022-2023
-- a granica zmiany pokrywa sie co do sezonu z granica miedzy treningiem
-a kalibracja. Model uczylby sie jednej definicji i byl oceniany w drugiej.
-Wariant z tymi cechami liczymy jako analize wrazliwosci, zeby koszt decyzji byl
-zmierzony.
-
-O-3 (D-26). Braki procentowe sa strukturalne i skoncentrowane pozycyjnie, wiec
-imputacja mediana idzie w parze z flaga braku. Realizuje to `add_indicator`
-w SimpleImputer wewnatrz wspolnego Pipeline.
-
-O-7. Filtr korelacyjny domyslnie wylaczony. Jego bilans zamyka sie dopiero
-w W4, wiec tutaj mierzymy wylacznie koszt po stronie dokladnosci.
+Strojenie: optuna + GroupKFold po zawodniku, tylko na treningu.
+Early stopping M3 na kalibracji, test oceniany na koncu.
 """
 
 from __future__ import annotations
@@ -67,12 +44,9 @@ SCIEZKA_KONFIGURACJI = KATALOG_REPO / "configs" / "split.yaml"
 KATALOG_TABEL = KATALOG_REPO / "reports" / "tables"
 KATALOG_MODELI = KATALOG_REPO / "models"
 
-# Ziarno jedno na caly etap. Wariancja ziarnowa jest przedmiotem osobnego
-# pomiaru w E12, wiec tutaj wszystko ma byc powtarzalne co do liczby (W6).
 ZIARNO = 20260829
 
-# Kolumny opisujace obserwacje i cel. Zaden z nich nie moze trafic do modelu:
-# player_id bylby identyfikatorem, a market_value_* jest zmienna celu.
+# Kolumny, ktore nie moga wejsc do modelu: identyfikatory, podzial i cele.
 KOLUMNY_META = [
     "player_id",
     "season",
@@ -88,30 +62,17 @@ KOLUMNY_META = [
 
 KOLUMNY_KATEGORYCZNE = ["pozycja", "region", "liga", "noga", "zmienil_lige"]
 
-# O-6: para o udowodnionej zmianie definicji na granicy podzialu (D-25).
+# Para dryblingu ze zmiana definicji na granicy trening/kalibracja (D-25).
 CECHY_ZMIENIONE = ["dribble_success_percentage", "tackled_perecentage"]
 
-# Cecha graniczna: skok +0,363 odchylenia na tej samej granicy sezonow, bez
-# dowodu z tozsamosci ksiegowej. Zostaje w zbiorze, wchodzi do adnotacji
-# w ograniczeniach i do analizy wrazliwosci razem z para wyzej.
+# Skok na tej samej granicy, ale bez dowodu zmiany definicji; zostaje (D-25).
 CECHA_GRANICZNA = "successful_dribbler_tackle_percentage"
 
-# Liczba prob optuny na model. Plan mowi o okolo stu; parametr zostaje jawny,
-# bo przy diagnozowaniu odpala sie ten sam kod z kilkoma probami.
 PROB_STROJENIA = 100
 
 
 def kolumny_cech(dane: pd.DataFrame, *, bez_zmienionych: bool = True) -> tuple:
-    """
-    Dzieli kolumny zbioru na liczbowe i kategoryczne cechy modelu.
-
-    Przyjmuje:
-        dane            - zbior modelowy
-        bez_zmienionych - czy odrzucic cechy z O-6
-
-    Zwraca:
-        pare (kolumny liczbowe, kolumny kategoryczne).
-    """
+    """Zwraca (kolumny liczbowe, kolumny kategoryczne) uzywane jako cechy."""
     odrzucone = set(KOLUMNY_META) | set(KOLUMNY_KATEGORYCZNE)
     if bez_zmienionych:
         odrzucone |= set(CECHY_ZMIENIONE)
@@ -120,7 +81,7 @@ def kolumny_cech(dane: pd.DataFrame, *, bez_zmienionych: bool = True) -> tuple:
 
 
 def wczytaj() -> tuple[pd.DataFrame, dict]:
-    """Wczytuje zbior modelowy i protokol oceny, sprawdzajac odcisk danych."""
+    """Wczytuje zbior modelowy i split.yaml, sprawdzajac odcisk danych."""
     konfiguracja = wczytaj_konfiguracje(SCIEZKA_KONFIGURACJI)
     sprawdz_odcisk_danych(konfiguracja, SCIEZKA_MODELU)
     return pd.read_parquet(SCIEZKA_MODELU), konfiguracja
@@ -130,15 +91,9 @@ def _wynik_walidacji(
     model, X, y, grupy, n_podzialow: int, proba: optuna.Trial | None = None
 ) -> float:
     """
-    Liczy sredni RMSLE po foldach GroupKFold.
+    Sredni RMSLE po foldach GroupKFold.
 
-    Uczenie i ocena dziela sie po zawodniku, wiec model nigdy nie widzi innego
-    sezonu tego samego czlowieka po obu stronach (D-16).
-
-    Po kazdym foldzie zglasza optunie wynik czesciowy. Najciezsze konfiguracje
-    lasu i XGBoosta dopasowuja sie po 30 sekund, wiec przy stu probach doliczenie
-    wszystkich pieciu foldow dla konfiguracji beznadziejnej kosztowaloby godziny.
-    Proba wyraznie gorsza od mediany dotychczasowych zostaje przerwana.
+    Po kazdym foldzie zglasza wynik do optuny, zeby slabe proby mozna bylo przerwac.
     """
     wyniki = []
     for numer, (ucz, wal) in enumerate(podzial_grupowy(grupy, n_podzialow)):
@@ -152,20 +107,9 @@ def _wynik_walidacji(
 
 
 def przestrzenie(proba: optuna.Trial, nazwa: str) -> dict:
-    """
-    Zwraca hiperparametry losowane przez optune dla danego modelu.
-
-    Przyjmuje:
-        proba - obiekt proby optuny
-        nazwa - "M1", "M2" albo "M3"
-
-    Zwraca:
-        slownik gotowy do podania estymatorowi.
-    """
+    """Przestrzen hiperparametrow dla modelu "M1", "M2" albo "M3"."""
     if nazwa == "M1":
         return {
-            # log=True losuje rownomiernie w skali logarytmicznej, bo alfa
-            # rozciaga sie na cztery rzedy wielkosci
             "alpha": proba.suggest_float("alpha", 1e-4, 1e1, log=True),
             "l1_ratio": proba.suggest_float("l1_ratio", 0.0, 1.0),
         }
@@ -190,10 +134,9 @@ def przestrzenie(proba: optuna.Trial, nazwa: str) -> dict:
 
 
 def zbuduj_estymator(nazwa: str, parametry: dict):
-    """Tworzy goly estymator o zadanych hiperparametrach."""
+    """Tworzy estymator M1, M2 albo M3 z podanymi hiperparametrami."""
     if nazwa == "M1":
-        # max_iter wysoko, bo przy malej alfie i stu cechach domyslne 1000
-        # konczy sie ostrzezeniem o braku zbieznosci
+        # przy malej alfie domyslne max_iter=1000 nie wystarcza do zbieznosci
         return ElasticNet(max_iter=20_000, random_state=ZIARNO, **parametry)
     if nazwa == "M2":
         return RandomForestRegressor(random_state=ZIARNO, n_jobs=-1, **parametry)
@@ -217,19 +160,7 @@ def stroj(
     n_podzialow: int,
     n_prob: int,
 ) -> tuple[dict, pd.DataFrame]:
-    """
-    Szuka hiperparametrow modelu na zbiorze treningowym.
-
-    Przyjmuje:
-        nazwa       - "M1", "M2" albo "M3"
-        X, y, grupy - wylacznie wiersze treningowe
-        kolumny     - para (liczbowe, kategoryczne)
-        n_podzialow - liczba foldow GroupKFold
-        n_prob      - liczba prob optuny
-
-    Zwraca:
-        pare (najlepsze hiperparametry, dziennik wszystkich prob).
-    """
+    """Stroi model optuna na treningu; zwraca (najlepsze parametry, dziennik prob)."""
     liczbowe, kategoryczne = kolumny
 
     def cel(proba: optuna.Trial) -> float:
@@ -237,12 +168,10 @@ def stroj(
         model = zbuduj_model(zbuduj_estymator(nazwa, parametry), liczbowe, kategoryczne)
         return _wynik_walidacji(model, X, y, grupy, n_podzialow)
 
-    # TPESampler z ziarnem: te same proby przy kazdym uruchomieniu (W6).
     badanie = optuna.create_study(
         direction="minimize",
         sampler=optuna.samplers.TPESampler(seed=ZIARNO),
-        # Pierwsze dziesiec prob liczy sie w calosci, zeby mediana odniesienia
-        # miala z czego powstac; potem przycinanie dziala od drugiego foldu.
+        # pierwsze 10 prob bez przycinania, zeby bylo z czego liczyc mediane
         pruner=optuna.pruners.MedianPruner(n_startup_trials=10, n_warmup_steps=1),
         study_name=nazwa,
     )
@@ -269,23 +198,14 @@ def dopasuj_finalny(
     y_kal: np.ndarray,
     kolumny: tuple,
 ):
-    """
-    Uczy model na calym treningu z najlepszymi hiperparametrami.
-
-    M3 dostaje early stopping na kalibracji, zgodnie z planem E5. Kalibracja
-    sluzy rowniez W3, wiec jest to jedyne miejsce, w ktorym uczenie o nia zaklada.
-
-    Zwraca:
-        dopasowany Pipeline.
-    """
+    """Uczy model na calym treningu; M3 z early stoppingiem na kalibracji."""
     liczbowe, kategoryczne = kolumny
     if nazwa == "M3":
         estymator = zbuduj_estymator(
             nazwa, {**parametry, "early_stopping_rounds": 50, "eval_metric": "rmse"}
         )
         model = zbuduj_model(estymator, liczbowe, kategoryczne)
-        # Zbior oceniajacy musi przejsc przez to samo przetwarzanie co trening,
-        # wiec dopasowujemy je osobno i podajemy juz przeksztalcone kolumny.
+        # eval_set musi przejsc przez to samo przetwarzanie co trening
         przetwarzanie = model.named_steps["przetwarzanie"]
         X_tr_p = przetwarzanie.fit_transform(X_tr, y_tr)
         X_kal_p = przetwarzanie.transform(X_kal)
@@ -308,21 +228,7 @@ def ocen_model(
     konfiguracja: dict,
     zbiory: tuple[str, ...],
 ) -> pd.DataFrame:
-    """
-    Liczy metryki modelu na wskazanych zbiorach, z podzialem na osie z D-12.
-
-    Przyjmuje:
-        model        - dopasowany Pipeline
-        nazwa        - etykieta trafiajaca do kolumny "model"
-        dane         - caly zbior modelowy
-        X_all        - te same wiersze, ograniczone do kolumn cech
-        duan         - wspolczynnik policzony na resztach treningowych
-        konfiguracja - slownik z configs/split.yaml
-        zbiory       - nazwy zbiorow do oceny
-
-    Zwraca:
-        ramke o ukladzie identycznym z e4_baseline.csv.
-    """
+    """Metryki modelu na podanych zbiorach z podzialem na osie z split.yaml."""
     cel = konfiguracja["cel"]["glowny"]
     osie = konfiguracja["osie_stratyfikacji"]
 
@@ -346,20 +252,13 @@ def analiza_reszt(
     reszty: np.ndarray, podzbior: pd.DataFrame, predykcja: np.ndarray, nazwa: str
 ) -> pd.DataFrame:
     """
-    Opisuje ksztalt bledu: heteroskedastycznosc, ogony i odchylenia grupowe.
+    Srednia i odchylenie reszt w decylach predykcji i prawdy, pozycjach i ligach.
 
-    Reszta dodatnia znaczy, ze model zanizyl. Trzy pytania:
-      - czy rozrzut bledu rosnie z przewidywana wartoscia (heteroskedastycznosc),
-      - czy model sciaga do sredniej w ogonach rozkladu celu,
-      - czy jakas liga albo pozycja ma systematyczne odchylenie.
-
-    Zwraca:
-        ramke w ukladzie dlugim: wiersz na kazda grupe kazdej analizy.
+    Reszta dodatnia = model zanizyl.
     """
     wiersze = []
 
-    # qcut dzieli na kubelki o rownej liczebnosci, a nie o rownej szerokosci -
-    # przy skosnym rozkladzie tylko tak dostajemy porownywalne grupy.
+    # qcut dzieli na grupy o rownej liczebnosci
     for etykieta, os in [
         ("decyl_predykcji", pd.qcut(predykcja, 10, labels=False, duplicates="drop")),
         (
@@ -387,7 +286,7 @@ def analiza_reszt(
 
 
 def main(n_prob: int = PROB_STROJENIA) -> None:
-    """Stroi, uczy i ocenia trzy modele, zapisujac wyniki do reports/tables/."""
+    """Stroi, uczy i ocenia M1-M3; zapisuje tabele e5_* do reports/tables/."""
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     KATALOG_TABEL.mkdir(parents=True, exist_ok=True)
     KATALOG_MODELI.mkdir(parents=True, exist_ok=True)
@@ -429,8 +328,7 @@ def main(n_prob: int = PROB_STROJENIA) -> None:
         model = dopasuj_finalny(nazwa, parametry, X_tr, y_tr, X_kal, y_kal, kolumny)
         joblib.dump(model, KATALOG_MODELI / f"{nazwa.lower()}.joblib")
 
-        # Wspolczynnik Duana z reszt treningowych - jedyne zrodlo, ktore nie jest
-        # wyciekiem (D-21).
+        # wspolczynnik Duana tylko z reszt treningowych (D-21)
         reszty_tr = y_tr - model.predict(X_tr)
         duan = wspolczynnik_duana(reszty_tr)
 
@@ -466,8 +364,6 @@ def main(n_prob: int = PROB_STROJENIA) -> None:
         KATALOG_TABEL / "e5_reszty.csv", index=False
     )
 
-    # Metryczka przebiegu w konwencji manifest.json z E2: wszystko, co pozwala
-    # sprawdzic, czy dwa przebiegi dotyczyly tego samego zadania.
     metryczka = {
         "ziarno": ZIARNO,
         "prob_strojenia": n_prob,
