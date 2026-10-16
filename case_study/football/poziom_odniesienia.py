@@ -1,18 +1,9 @@
 """
-Poziom odniesienia dla wyceny zawodnikow (etap E4).
+Etap E4: poziomy odniesienia M0a-M0c na kalibracji i tescie.
 
     python -m case_study.football.poziom_odniesienia
 
-Liczy trzy modele trywialne na zbiorze kalibracyjnym i testowym, kazdy
-z podzialem na osie z D-12, i zapisuje wynik do `reports/tables/e4_baseline.csv`.
-Przy okazji powstaja dwie tabele diagnostyczne: przeciecia miedzy zbiorami
-i ksztalt podzialu GroupKFold.
-
-Do czego to sluzy: kazda liczba z etapow E5 i dalszych ma byc czytana wzgledem
-tych wartosci. Model, ktory tlumaczy 70 procent wariancji, brzmi dobrze do chwili,
-w ktorej okazuje sie, ze przepisanie zeszlorocznej wyceny tlumaczy 84 procent.
-
-Zbior C nie jest tu oceniany. Jego zmienna celu otwiera sie dopiero w E11 (D-14).
+Zapisuje e4_baseline.csv, e4_przeciecia.csv i e4_foldy.csv. Zbior C pominiety (D-14).
 """
 
 from __future__ import annotations
@@ -46,37 +37,20 @@ SCIEZKA_MODELU = KATALOG_WYJSCIA / "model.parquet"
 SCIEZKA_KONFIGURACJI = KATALOG_REPO / "configs" / "split.yaml"
 KATALOG_TABEL = KATALOG_REPO / "reports" / "tables"
 
-# Zbiory oceniane w tym etapie. Kalibracja jest tu po to, zeby w E5 dalo sie
-# porownywac modele z poziomem odniesienia bez dotykania testu.
 ZBIORY_OCENIANE = ("kalibracja", "test")
 
 
 def poprzedni_sezon(sezon: str) -> str:
     """
-    Zwraca oznaczenie sezonu poprzedzajacego, na przyklad 2023-2024 -> 2022-2023.
-
-    Liczymy z rocznika, a nie z pozycji na liscie sezonow. Roznica ujawnia sie
-    przy luce kalendarzowej: dla 2020-2021 ta funkcja zwraca nieobecne w danych
-    2019-2020, wiec wiersz zostaje bez predykcji. Przesuniecie pozycyjne sklejaloby
-    w tym miejscu sezony odlegle o dwa lata i po cichu psulo poziom odniesienia.
-
-    Przyjmuje:
-        sezon - napis w formacie "RRRR-RRRR"
-
-    Zwraca:
-        napis w tym samym formacie, przesuniety o rok wstecz.
+    "2023-2024" -> "2022-2023". Liczone z roku, nie z pozycji na liscie,
+    zeby po 2020-2021 nie wziac 2018-2019 (brak sezonu 2019-2020).
     """
     poczatek = int(str(sezon)[:4])
     return f"{poczatek - 1}-{poczatek}"
 
 
 def wczytaj() -> tuple[pd.DataFrame, dict]:
-    """
-    Wczytuje zbior modelowy i konfiguracje podzialu, sprawdzajac odcisk danych.
-
-    Zwraca:
-        pare (zbior modelowy, konfiguracja).
-    """
+    """Wczytuje zbior modelowy i split.yaml, sprawdzajac odcisk danych."""
     konfiguracja = wczytaj_konfiguracje(SCIEZKA_KONFIGURACJI)
     _, odcisk = sprawdz_odcisk_danych(konfiguracja, SCIEZKA_MODELU)
     dane = pd.read_parquet(SCIEZKA_MODELU)
@@ -92,20 +66,9 @@ def zbuduj_predykcje(
     konfiguracja: dict,
 ) -> list[dict]:
     """
-    Liczy predykcje wszystkich poziomow odniesienia dla jednego zbioru.
+    Predykcje M0a, M0b, M0c i M0c_pelny dla zbioru `oceniany`.
 
-    Kazdy poziom dostaje rowniez predykcje na samym treningu - stad biora sie
-    reszty do wspolczynnika Duana (D-21). Wspolczynnik liczony na zbiorze
-    ocenianym wymagalby jego etykiet, czyli bylby wyciekiem.
-
-    Przyjmuje:
-        dane         - caly zbior modelowy
-        oceniany     - nazwa zbioru do wyceny, "kalibracja" albo "test"
-        konfiguracja - slownik z configs/split.yaml
-
-    Zwraca:
-        liste slownikow: nazwa, opis, predykcje, predykcje treningowe, maska
-        wierszy objetych ocena i udzial wierszy uzupelnionych.
+    Predykcje na treningu sa potrzebne do wspolczynnika Duana (D-21).
     """
     cel = konfiguracja["cel"]["glowny"]
     kolumny_komorki = konfiguracja["poziomy_odniesienia"]["M0b"]["kolumny"]
@@ -114,8 +77,7 @@ def zbuduj_predykcje(
     trening = dane[dane["podzial"] == "trening"]
     cele = dane[dane["podzial"] == oceniany]
 
-    # Historia dla M0c: wszystko poza zbiorem C. Wyszukiwanie i tak siega
-    # wylacznie po sezon t-1, wiec nie ma tu drogi do informacji z przyszlosci.
+    # M0c i tak siega tylko po sezon t-1, wiec historia moze obejmowac wszystko poza C
     historia = dane[dane["podzial"] != "zbior_C"]
 
     m0a = mediana_globalna(trening, cele, cel)
@@ -188,17 +150,7 @@ def ocen_zbior(
     oceniany: str,
     konfiguracja: dict,
 ) -> pd.DataFrame:
-    """
-    Liczy metryki wszystkich poziomow odniesienia na jednym zbiorze.
-
-    Przyjmuje:
-        dane         - caly zbior modelowy
-        oceniany     - nazwa zbioru, "kalibracja" albo "test"
-        konfiguracja - slownik z configs/split.yaml
-
-    Zwraca:
-        ramke w ukladzie dlugim: wiersz na kazda pare (poziom, grupa).
-    """
+    """Metryki wszystkich poziomow odniesienia na jednym zbiorze."""
     cel = konfiguracja["cel"]["glowny"]
     osie = konfiguracja["osie_stratyfikacji"]
 
@@ -212,8 +164,7 @@ def ocen_zbior(
         podzbior = cele[poziom["maska"]]
         trening_poziomu = trening[poziom["maska_treningu"]]
 
-        # Reszty treningowe tego samego poziomu odniesienia - kazdy ma wlasny
-        # wspolczynnik, bo kazdy inaczej rozklada blad.
+        # kazdy poziom ma wlasny wspolczynnik Duana z wlasnych reszt treningowych
         duan = wspolczynnik_duana(
             trening_poziomu[cel].to_numpy() - poziom["pred_trening"]
         )
@@ -245,13 +196,7 @@ def ocen_zbior(
 
 
 def diagnostyka_podzialu(dane: pd.DataFrame, konfiguracja: dict) -> None:
-    """
-    Zapisuje tabele opisujace sam podzial: przeciecia i ksztalt foldow.
-
-    Przyjmuje:
-        dane         - caly zbior modelowy
-        konfiguracja - slownik z configs/split.yaml
-    """
+    """Zapisuje tabele przeciec miedzy zbiorami i opis foldow GroupKFold."""
     klucz = konfiguracja["podzial_zewnetrzny"]["klucz_obserwacji"]
     grupa = konfiguracja["podzial_wewnetrzny"]["kolumna_grupujaca"]
     n_podzialow = konfiguracja["podzial_wewnetrzny"]["n_podzialow"]
@@ -301,8 +246,6 @@ def main() -> None:
 
     print(f"\n  zapisano {len(wyniki)} wierszy do {sciezka.relative_to(KATALOG_REPO)}")
 
-    # Roznica miedzy calym zbiorem a zawodnikami nieznanymi z treningu jest tu
-    # najciekawsza liczba: M0c dziala wylacznie na tych, ktorych rynek juz wycenil.
     test = wyniki[(wyniki["zbior"] == "test") & (wyniki["os"] == "znany_z_treningu")]
     if not test.empty:
         print("\n  test, os znani / nowi:")
