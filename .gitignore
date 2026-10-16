@@ -1,4 +1,4 @@
-# Python-generated files
+# Python
 __pycache__/
 *.py[oc]
 build/
@@ -6,9 +6,10 @@ dist/
 wheels/
 *.egg-info
 
-# Virtual environments
+# Srodowisko
 .venv
 
+# Dane (zostaja tylko .gitkeep i manifest)
 data/raw/**
 !data/raw/**/
 data/processed/*.parquet
@@ -17,22 +18,12 @@ data/processed/*.csv
 !data/**/.gitkeep
 !data/processed/manifest.json
 
-# Wytrenowane modele. Odtwarzalne z kodu i metryczki przebiegu
-# (reports/tables/e5_metryczka.json ma ziarno i hiperparametry), wiec binaria
-# nie musza siedziec w historii.
-#
-# Ukosnik z przodu jest tu konieczny. Wzorzec "models/" bez niego pasuje do
-# katalogu o tej nazwie na kazdym poziomie drzewa, wiec zjadal rowniez
-# src/trustml/models/ - czyli wspolny Pipeline biblioteki.
+# Wytrenowane modele; "/" z przodu, zeby nie lapalo src/trustml/models/
 /models/
 
-# Migawki posrednich etapow do ogladania w Data Wrangler
+# Podglady posrednich etapow (Data Wrangler)
 data/podglad/
 
-# Wyniki analiz sa czescia repozytorium. Raport docs/05-eda.md osadza
-# figury z reports/figures/, wiec bez tego katalogu odnosniki w raporcie
-# beda martwe dla kazdego, kto sklonuje repo. Negacja stoi na koncu pliku,
-# bo git bierze pod uwage ostatnia pasujaca regule: dzieki temu reports/
-# przetrwa dodanie szerokiego wzorca w rodzaju *.png czy *.csv wyzej.
+# Wyniki zostaja w repo (docs i README linkuja do wykresow); na koncu, zeby wygraly
 !reports/
 !reports/**
