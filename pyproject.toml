@@ -13,7 +13,7 @@ dependencies = [
     "optuna>=4.9.0",
     "pandas>=3.0.5",
     "pyarrow>=25.0.1",
-    # protokol podzialu mieszka w configs/split.yaml
+    # do wczytania configs/split.yaml
     "pyyaml>=6.0.3",
     "scikit-learn>=1.9.0",
     "scipy>=1.18.0",
@@ -32,5 +32,6 @@ dev = [
     "ruff>=0.16.3",
 ]
 
-[tool.ruff.lint.isort]
-known-local-folder = ["parametry", "zrodla", "cechy", "wycena", "zbiory"]
+[tool.pytest.ini_options]
+# case_study/ nie jest instalowany, wiec testy importuja go z katalogu repo
+pythonpath = ["."]
