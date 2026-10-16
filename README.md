@@ -109,7 +109,7 @@ ruff format
 - `docs/01-projekt.md` — cel pracy, wymiary W1–W6, modele, API biblioteki
 - `docs/02-dane.md` — źródła, pipeline, słownik zbioru, ograniczenia
 - `docs/03-decyzje.md` — log decyzji projektowych
-- `docs/04-plan.md` — mapa drogowa i status
+- `docs/04-plan.md` — mapa/status
 - `docs/05-eda.md` — analiza eksploracyjna, wnioski i ciekawostki
 
 ## Źródła danych
