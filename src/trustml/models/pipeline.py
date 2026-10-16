@@ -1,31 +1,6 @@
 """
-Wspolny Pipeline przetwarzania cech dla wszystkich modeli.
-
-Kazdy model dostaje dokladnie to samo wejscie, wiec roznice w wynikach pochodza
-z samego algorytmu. Kolejnosc krokow:
-
-    1. imputacja mediana, z flaga braku (add_indicator)
-    2. standaryzacja
-    3. opcjonalny filtr korelacyjny
-    4. kodowanie kategorii bez upuszczania poziomu
-
-Punkt pierwszy realizuje O-3. Braki w kolumnach procentowych sa strukturalne,
-czyli oznaczaja mianownik rowny zeru, i rozkladaja sie nierowno miedzy pozycjami
-- 4,88 procent u obroncow wobec 0,17 u napastnikow. Sama imputacja mediana
-wprowadzilaby obciazenie grupowe, wiec obok wartosci wstawionej idzie kolumna
-zero-jedynkowa mowiaca, ze wartosci tam nie bylo. Model moze ja wykorzystac,
-a W5 ma czego szukac.
-
-Punkt czwarty realizuje D-10. `OneHotEncoder` bez `drop` i z
-`handle_unknown="ignore"`: upuszczenie pierwszego poziomu rozklada wage kategorii
-odniesienia na wyraz wolny, przez co ranking waznosci cech w W4 przestaje byc
-porownywalny miedzy modelami. Przy nieznanej kategorii - a taka bedzie Primeira
-Liga w E11 - koder zwraca same zera zamiast podnosic wyjatek.
-
-Filtr korelacyjny jest opcjonalny i domyslnie wylaczony, bo jego bilans jest
-przedmiotem O-7: przy progu 0,95 kosztuje 0,15 R2 na modelu liniowym, a zysk lezy
-w stabilnosci rankingu SHAP, czyli po stronie W4. Obie polowy bilansu mierzymy
-na tej samej konfiguracji.
+Wspolne przetwarzanie cech dla wszystkich modeli: imputacja z flaga braku (D-26),
+standaryzacja, opcjonalny filtr korelacyjny (O-7) i one-hot bez drop (D-10).
 """
 
 from __future__ import annotations
@@ -43,16 +18,10 @@ from sklearn.utils.validation import check_is_fitted
 
 class FiltrKorelacyjny(BaseEstimator, TransformerMixin):
     """
-    Usuwa jedna ceche z kazdej pary skorelowanej powyzej progu.
+    Usuwa jedna ceche z kazdej pary o |korelacji| powyzej `prog`.
 
-    Kolejnosc przegladania jest ustalona i idzie od lewej: z pary zostaje cecha
-    wczesniejsza w kolumnach wejsciowych. Determinizm ma tu znaczenie praktyczne,
-    bo inaczej ranking waznosci cech zmienialby sie miedzy przebiegami
-    z powodow niezwiazanych z modelem (W6).
-
-    Przyjmuje:
-        prog - wartosc bezwzgledna korelacji, powyzej ktorej para uchodzi
-               za redundantna; None wylacza filtr
+    Z pary zostaje cecha wczesniejsza, wiec wynik jest powtarzalny.
+    `prog=None` wylacza filtr.
     """
 
     def __init__(self, prog: float | None = 0.95):
@@ -66,9 +35,7 @@ class FiltrKorelacyjny(BaseEstimator, TransformerMixin):
             self.zachowane_ = np.ones(X.shape[1], dtype=bool)
             return self
 
-        # rowvar=False mowi numpy, ze kolumny sa zmiennymi, a wiersze
-        # obserwacjami. Kolumna stala daje dzielenie przez zero i NaN
-        # w macierzy - taka pare traktujemy jako nieskorelowana.
+        # kolumna stala daje NaN w macierzy korelacji, traktuje ja jak nieskorelowana
         with np.errstate(invalid="ignore", divide="ignore"):
             korelacje = np.abs(np.corrcoef(X, rowvar=False))
         korelacje = np.nan_to_num(korelacje, nan=0.0)
@@ -94,7 +61,7 @@ class FiltrKorelacyjny(BaseEstimator, TransformerMixin):
         return X[:, self.zachowane_]
 
     def get_feature_names_out(self, input_features=None):
-        """Przekazuje dalej nazwy cech, ktore przezyly filtr - potrzebne w W4."""
+        """Zwraca nazwy cech, ktore przeszly przez filtr."""
         check_is_fitted(self, "zachowane_")
         if input_features is None:
             input_features = np.array(
@@ -109,26 +76,17 @@ def zbuduj_przetwarzanie(
     *,
     prog_korelacji: float | None = None,
 ) -> ColumnTransformer:
-    """
-    Sklada przetwarzanie cech wspolne dla wszystkich modeli.
-
-    Przyjmuje:
-        kolumny_liczbowe     - nazwy kolumn ciaglych
-        kolumny_kategoryczne - nazwy kolumn tekstowych
-        prog_korelacji       - prog filtra korelacyjnego; None wylacza filtr
-
-    Zwraca:
-        ColumnTransformer gotowy do wstawienia do Pipeline.
-    """
+    """Sklada ColumnTransformer dla kolumn liczbowych i kategorycznych."""
     liczbowe = Pipeline(
         [
-            # add_indicator dokleja kolumne zero-jedynkowa dla kazdej cechy
-            # z brakami; to jest wariant "flaga zero prob" z O-3.
+            # add_indicator dokleja kolumne 0/1 "byl brak" dla cech z brakami
             ("imputacja", SimpleImputer(strategy="median", add_indicator=True)),
             ("skalowanie", StandardScaler()),
             ("filtr", FiltrKorelacyjny(prog=prog_korelacji)),
         ]
     )
+    # bez drop: nieznana liga (Primeira Liga) daje same zera, a nie udaje
+    # kategorii referencyjnej
     kategoryczne = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
 
     return ColumnTransformer(
@@ -136,8 +94,7 @@ def zbuduj_przetwarzanie(
             ("liczbowe", liczbowe, list(kolumny_liczbowe)),
             ("kategoryczne", kategoryczne, list(kolumny_kategoryczne)),
         ],
-        # remainder="drop": kolumna, ktorej nikt nie wymienil, ma nie wejsc
-        # do modelu przez przypadek. Klucze i metadane leza w tym samym pliku.
+        # do modelu wchodzi tylko to, co wymienione; w pliku sa tez cel i klucze
         remainder="drop",
         verbose_feature_names_out=False,
     )
@@ -150,18 +107,7 @@ def zbuduj_model(
     *,
     prog_korelacji: float | None = None,
 ) -> Pipeline:
-    """
-    Doklada estymator na koniec wspolnego przetwarzania.
-
-    Przyjmuje:
-        estymator            - dowolny regresor zgodny z API scikit-learn
-        kolumny_liczbowe     - nazwy kolumn ciaglych
-        kolumny_kategoryczne - nazwy kolumn tekstowych
-        prog_korelacji       - prog filtra korelacyjnego; None wylacza filtr
-
-    Zwraca:
-        Pipeline uczacy sie od surowej ramki do predykcji.
-    """
+    """Zwraca Pipeline: wspolne przetwarzanie + podany estymator."""
     return Pipeline(
         [
             (
