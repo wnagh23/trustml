@@ -520,17 +520,10 @@ def a4_struktura_panelu(model: pd.DataFrame) -> None:
 
 def a5_podgrupy(model: pd.DataFrame) -> None:
     """
-    Rozklad celu w podgrupach oraz premia grupowa po kontroli obserwowalnych.
+    A5: cel w podgrupach (pozycja, liga, region, noga, zmiana ligi).
 
-    Sama mediana w grupie miesza dwie rzeczy: sklad grupy i wycene grupy. Region
-    AMERYKA_PLD ma inny rozklad wieku i inny rozklad lig niz EUROPA, wiec roznica
-    surowych median moze pochodzic w calosci ze skladu. Dlatego liczymy tez
-    premie warunkowa: dopasowujemy regresje liniowa na wieku, kwadracie wieku,
-    pozycji, lidze i sezonie, a potem usredniamy reszty w kazdej grupie. To, co
-    zostaje, jest czescia niewyjasniona przez te kontrole.
-
-    Wynik jest wstepna diagnoza W5 (sprawiedliwosc) postawiona przed
-    jakimkolwiek modelem - opisuje obciazenie wycen rynku, a nie modelu.
+    Obok mediany licze "premie warunkowa": srednia reszte z regresji na wieku,
+    pozycji, lidze i sezonie, zeby oddzielic sklad grupy od jej wyceny.
     """
     print("\nA5  cel i cechy w podgrupach")
     from sklearn.linear_model import LinearRegression
@@ -540,21 +533,16 @@ def a5_podgrupy(model: pd.DataFrame) -> None:
     kontrole_kat = ["pozycja", "liga", "season"]
     kontrole_num = ["wiek", "wiek_do_kw"]
 
-    # `sparse_output=False` kaze enkoderowi zwrocic zwykla tablice numpy zamiast
-    # macierzy rzadkiej, co upraszcza sklejenie z kolumnami liczbowymi.
     enkoder = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
 
     def premia(kolumna: str) -> pd.DataFrame:
         """
-        Srednia reszta w grupie po odjeciu wplywu wieku, pozycji, ligi i sezonu.
+        Srednia reszta w grupach `kolumna` po kontroli wieku, pozycji, ligi i sezonu.
 
-        Analizowana zmienna wypada ze zbioru kontroli. Gdyby zostala, model
-        kontrolny wyjasnilby jej wplyw w calosci i kazda premia wyszlaby rowna
-        zeru z samej konstrukcji.
+        Badana zmienna wypada z kontroli, inaczej premia zawsze wyszlaby 0.
         """
         d = b[b[kolumna].notna()]
         kategoryczne = [k for k in kontrole_kat if k != kolumna]
-        # `np.hstack` skleja tablice w poziomie, czyli dokleja kolumny.
         macierz = np.hstack(
             [enkoder.fit_transform(d[kategoryczne]), d[kontrole_num].to_numpy()]
         )
@@ -562,7 +550,7 @@ def a5_podgrupy(model: pd.DataFrame) -> None:
         reszta = d["log_market_value"] - model_kontrolny.predict(macierz)
         wynik = reszta.groupby(d[kolumna]).agg(["size", "mean"])
         wynik.columns = ["par", "srednia_reszta"]
-        # Reszta jest w skali logarytmicznej, wiec exp zamienia ja na mnoznik.
+        # reszta jest w skali log, exp daje mnoznik
         wynik["mnoznik"] = np.exp(wynik["srednia_reszta"])
         return wynik
 
@@ -585,7 +573,6 @@ def a5_podgrupy(model: pd.DataFrame) -> None:
     tabela = pd.concat(surowe)
     zapisz_tabele(tabela.round(4), "a5_podgrupy")
 
-    # Fakty do raportu: najwieksze premie warunkowe.
     for grupa in ["AMERYKA_PLD", "EUROPA", "RESZTA"]:
         w = tabela[(tabela["zmienna"] == "region")].loc[grupa]
         zapisz_fakt(f"a5_mnoznik_region_{grupa}", round(float(w["mnoznik"]), 3))
@@ -605,8 +592,7 @@ def a5_podgrupy(model: pd.DataFrame) -> None:
         int(tabela[tabela["zmienna"] == "zmienil_lige"].loc[True, "par"]),
     )
 
-    # Rozrzut wewnatrz ligi wobec roznic miedzy ligami. Jesli odchylenie w lidze
-    # jest duzo wieksze niz rozstep median, to liga sama w sobie tlumaczy malo.
+    # rozrzut wewnatrz ligi w porownaniu z roznica miedzy ligami
     ligi = tabela[tabela["zmienna"] == "liga"]
     zapisz_fakt(
         "a5_rozstep_srednich_lig",
@@ -634,7 +620,6 @@ def a5_podgrupy(model: pd.DataFrame) -> None:
     fig.suptitle("A5. Rozkład celu w podgrupach, Big 5", y=1.03)
     zapisz_figure(fig, "a5_podgrupy")
 
-    # Druga figura: premia warunkowa jako mnoznik.
     fig, os_ = plt.subplots(figsize=(7.5, 3.6))
     wybrane = tabela[tabela["zmienna"].isin(["region", "noga", "zmienil_lige"])]
     etykiety = [f"{z}: {g}" for z, g in zip(wybrane["zmienna"], wybrane.index)]
@@ -652,28 +637,10 @@ def _koszt_redundancji(
     model: pd.DataFrame, cechy: list[str], prog: float
 ) -> dict[str, float]:
     """
-    Porownuje jakosc modelu liniowego bez filtra korelacyjnego i w dwoch jego
-    wariantach.
+    R2 Ridge na kalibracji: bez filtra korelacyjnego i z filtrem w dwoch wersjach.
 
-    Uczymy na treningu, oceniamy na kalibracji, wszedzie ten sam potok i ta sama
-    siatka alf. Jedyna roznica to lista cech ciaglych podanych na wejsciu, wiec
-    cala roznica w wyniku pochodzi z filtra.
-
-    Warianty roznia sie regula wyboru cechy do usuniecia z pary:
-
-    - naiwny: zostaje cecha stojaca w parze pierwsza, czyli wczesniejsza
-      alfabetycznie. Tak dziala filtr napisany najprosciej, jak sie da;
-    - swiadomy celu: zostaje cecha silniej skorelowana ze zmienna celu, przy
-      czym pary przetwarzamy od najsilniej skorelowanej. Korelacje z celem
-      liczymy wylacznie na treningu, wiec regula nie zaglada poza niego.
-
-    Przyjmuje:
-        model - caly zbior modelowy
-        cechy - lista cech ciaglych do przefiltrowania
-        prog  - prog korelacji bezwzglednej, powyzej ktorego para idzie do odsiewu
-
-    Zwraca:
-        slownik z R2 trzech wariantow oraz liczba cech, ktore zostaja.
+    Naiwny zostawia pierwsza ceche z pary, "swiadomy celu" te silniej
+    skorelowana z celem (korelacje tylko z treningu).
     """
     from sklearn.compose import ColumnTransformer
     from sklearn.impute import SimpleImputer
@@ -695,12 +662,9 @@ def _koszt_redundancji(
         if a not in usuniete_naiwnie:
             usuniete_naiwnie.add(c)
 
-    # `corrwith` liczy korelacje kazdej kolumny z podana seria; bierzemy modul,
-    # bo interesuje nas sila zwiazku niezaleznie od kierunku.
     sila_zwiazku = trening[cechy].corrwith(trening["log_market_value"]).abs()
     usuniete_swiadomie: set[str] = set()
-    # `sort_values(ascending=False)` przetwarza pary od najsilniej skorelowanej,
-    # wiec najbardziej oczywiste duplikaty rozstrzygamy w pierwszej kolejnosci.
+    # pary od najsilniej skorelowanej
     for a, c in pary[pary > prog].sort_values(ascending=False).index:
         if a in usuniete_swiadomie or c in usuniete_swiadomie:
             continue
@@ -759,14 +723,8 @@ def _koszt_redundancji(
 
 def a6_korelacje(model: pd.DataFrame) -> None:
     """
-    Ile z cech `_p90` jest redundantnych, czyli wejscie do filtra korelacyjnego w E5.
-
-    Korelacje liczymy wylacznie na zbiorze treningowym, bo filtr w Pipeline
-    bedzie fitowany na treningu i to jego decyzje odtwarzamy tutaj.
-
-    Symulujemy dokladnie ta procedure, ktora zastosuje filtr: idziemy po parach
-    o korelacji powyzej progu i z kazdej takiej pary usuwamy druga cecha,
-    zachowujac pierwsza. Wynikiem jest liczba cech, ktore filtr usunie.
+    A6: korelacje miedzy cechami (tylko trening): ile cech usunalby filtr,
+    jak cechy grupuja sie w bloki i ile niezaleznych wymiarow daja (PCA).
     """
     print("\nA6  korelacje miedzy cechami")
     bloki = kolumny_cech(model)
@@ -774,18 +732,14 @@ def a6_korelacje(model: pd.DataFrame) -> None:
     trening = model[model["podzial"] == "trening"]
 
     macierz = trening[cechy].corr().abs()
-    # `np.triu(..., 1)` daje maske gornego trojkata bez przekatnej, czyli kazda
-    # pare cech dokladnie raz. `where` zostawia tylko te pola, `stack` splaszcza
-    # tabele do serii indeksowanej para nazw.
+    # gorny trojkat bez przekatnej = kazda para raz
     maska = np.triu(np.ones(macierz.shape, dtype=bool), 1)
     pary = macierz.where(maska).stack()
 
     for prog in PROGI_KORELACJI:
         zapisz_fakt(f"a6_par_powyzej_{prog}", int((pary > prog).sum()))
-        # Symulacja filtra: usuwamy druga cecha z kazdej pary powyzej progu.
+        # tak jak filtr: z kazdej pary powyzej progu usuwam druga ceche
         do_usuniecia: set[str] = set()
-        # Indeks serii `pary` jest dwupoziomowy, wiec kazdy jego element
-        # rozpakowuje sie na nazwy obu cech tworzacych pare.
         for a, c in pary[pary > prog].index:
             if a not in do_usuniecia:
                 do_usuniecia.add(c)
@@ -810,14 +764,9 @@ def a6_korelacje(model: pd.DataFrame) -> None:
     zapisz_fakt("a6_najsilniejsza_korelacja", round(float(tabela.iloc[0, 2]), 5))
     zapisz_fakt("a6_druga_para", f"{tabela.iloc[1, 0]} / {tabela.iloc[1, 1]}")
     zapisz_fakt("a6_druga_korelacja", round(float(tabela.iloc[1, 2]), 5))
-    # Mediana korelacji bezwzglednej mowi, jak gesta jest cala macierz.
     zapisz_fakt("a6_mediana_korelacji", round(float(pary.median()), 4))
 
-    # Ile filtr faktycznie kupuje. Model liniowy z regularyzacja grzbietowa jest
-    # tu wrazliwym probnikiem: para cech skorelowanych niemal doskonale pozwala
-    # dopasowac duze wspolczynniki o przeciwnych znakach, ktorych roznica jest
-    # na treningu prawie stala. Gdy poziom takiej cechy przesunie sie poza
-    # treningiem, blad rosnie proporcjonalnie do tych wspolczynnikow.
+    # koszt filtra na modelu Ridge (O-7)
     koszt = _koszt_redundancji(model, cechy, PROG_FILTRA_DO_POMIARU)
     for nazwa, wartosc in koszt.items():
         zapisz_fakt(f"a6_{nazwa}", wartosc)
@@ -830,40 +779,28 @@ def a6_korelacje(model: pd.DataFrame) -> None:
         f"({koszt['zysk_filtra_swiadomego']:+.4f})"
     )
 
-    # Struktura blokowa i efektywna wymiarowosc.
-    #
-    # Sama macierz korelacji 95 na 95 jest nieczytelna, wiec zadajemy jej dwa
-    # konkretne pytania. Po pierwsze: w ile grup wzajemnie zamiennych cech
-    # rozpada sie ten zestaw. Po drugie: ilu niezaleznych wymiarow te 95 kolumn
-    # naprawde dostarcza. Odpowiedz na oba pytania mowi, ile realnie mierzymy.
+    # bloki cech: grupowanie hierarchiczne z odlegloscia 1 - |r|
     from scipy.cluster import hierarchy
     from scipy.spatial.distance import squareform
 
     odleglosc = 1 - macierz.to_numpy()
-    # Macierz odleglosci musi byc dokladnie symetryczna i miec zera na przekatnej,
-    # inaczej `squareform` odmawia. Drobne bledy zaokraglen usuwamy jawnie.
+    # squareform wymaga idealnej symetrii i zer na przekatnej
     np.fill_diagonal(odleglosc, 0.0)
     odleglosc = (odleglosc + odleglosc.T) / 2
-    # `squareform` zamienia kwadratowa macierz odleglosci na wektor, ktorego
-    # oczekuje `linkage`. Metoda "average" laczy grupy po sredniej odleglosci
-    # miedzy ich elementami, wiec blok oznacza tu zbior cech wzajemnie
-    # skorelowanych, a nie lancuch par.
+    # "average": blok to cechy skorelowane srednio ze soba, a nie lancuch par
     powiazania = hierarchy.linkage(
         squareform(odleglosc, checks=False), method="average"
     )
     porzadek = hierarchy.leaves_list(powiazania)
     uporzadkowana = macierz.iloc[porzadek, porzadek]
 
-    # `fcluster` z kryterium "distance" tnie drzewo na wysokosci 1 - prog, czyli
-    # zostawia w jednym bloku cechy o sredniej korelacji bezwzglednej co najmniej
-    # rownej progowi.
+    # ciecie drzewa na wysokosci 1 - prog
     klastry = hierarchy.fcluster(
         powiazania, t=1 - PROG_BLOKU_CECH, criterion="distance"
     )
     klastry_w_porzadku = klastry[porzadek]
     nazwy_w_porzadku = [cechy[i] for i in porzadek]
 
-    # Granice blokow to miejsca, w ktorych numer klastra sie zmienia.
     granice = [
         i
         for i in range(1, len(klastry_w_porzadku))
@@ -875,8 +812,7 @@ def a6_korelacje(model: pd.DataFrame) -> None:
     opis_blokow = []
     for numer, (od_, do_) in enumerate(zip(poczatki, konce), start=1):
         czlonkowie = nazwy_w_porzadku[od_:do_]
-        # Reprezentantem bloku jest cecha najsilniej zwiazana z pozostalymi
-        # w tym samym bloku, czyli jego srodek.
+        # reprezentant = cecha najmocniej skorelowana z reszta bloku
         wewnatrz = macierz.loc[czlonkowie, czlonkowie]
         reprezentant = (
             czlonkowie[0] if len(czlonkowie) == 1 else wewnatrz.mean().idxmax()
@@ -915,23 +851,16 @@ def a6_korelacje(model: pd.DataFrame) -> None:
         f"({tabela_blokow.loc[tabela_blokow['cech'].idxmax(), 'reprezentant']})"
     )
 
-    # Efektywna wymiarowosc. Wartosci wlasne macierzy kowariancji cech
-    # standaryzowanych mowia, ile wariancji niesie kazdy kolejny niezalezny
-    # kierunek. Liczba kierunkow potrzebnych na 80 i 90 procent wariancji jest
-    # uczciwa miara tego, ile niezaleznych pomiarow tu w ogole mamy.
+    # PCA na cechach standaryzowanych: ile skladowych daje 80% i 90% wariancji
     dane = trening[cechy]
-    # Braki uzupelniamy mediana treningu wylacznie na potrzeby tego pomiaru.
     dane = dane.fillna(dane.median())
     standaryzowane = (dane - dane.mean()) / dane.std()
-    # `eigvalsh` liczy wartosci wlasne macierzy symetrycznej i zwraca je rosnaco,
-    # wiec odwracamy kolejnosc przez [::-1].
+    # eigvalsh zwraca wartosci rosnaco, stad [::-1]
     wartosci_wlasne = np.linalg.eigvalsh(np.cov(standaryzowane.to_numpy().T))[::-1]
     skumulowana = np.cumsum(wartosci_wlasne) / wartosci_wlasne.sum()
     skladowych_80 = int((skumulowana < 0.80).sum() + 1)
     skladowych_90 = int((skumulowana < 0.90).sum() + 1)
-    # Wymiarowosc partycypacyjna: (suma wartosci wlasnych)^2 / suma kwadratow.
-    # Dla zestawu k cech idealnie nieskorelowanych wynosi k, a dla zestawu
-    # sprowadzajacego sie do jednego wymiaru spada do jednosci.
+    # (suma wartosci wlasnych)^2 / suma kwadratow: k dla k niezaleznych cech, 1 dla jednej
     wymiarowosc = float(wartosci_wlasne.sum() ** 2 / np.sum(wartosci_wlasne**2))
     zapisz_fakt("a6_skladowych_na_80_proc", skladowych_80)
     zapisz_fakt("a6_skladowych_na_90_proc", skladowych_90)
@@ -951,9 +880,7 @@ def a6_korelacje(model: pd.DataFrame) -> None:
     )
 
     obraz = osie[0].imshow(uporzadkowana, cmap="magma", vmin=0, vmax=1)
-    # Bloki obrysowujemy ramka zamiast ciac obraz liniami przez cala szerokosc.
-    # Przy 28 blokach, z ktorych polowa jest jednoelementowa, siatka linii
-    # zaciemnialaby to, co ma pokazac.
+    # ramki tylko wokol blokow od 3 cech
     etykiety_pozycje, etykiety_tekst = [], []
     for wiersz, (od_, do_) in zip(opis_blokow, zip(poczatki, konce)):
         if wiersz["cech"] < 3:
