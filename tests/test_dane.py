@@ -1,8 +1,4 @@
-"""
-Testy zbioru modelowego.
-
-    pytest tests/ -v
-"""
+"""Testy zbioru modelowego (pomijane, gdy nie ma model.parquet)."""
 
 from __future__ import annotations
 
@@ -26,7 +22,7 @@ from case_study.football.parametry import (
 SCIEZKA_MODELU = KATALOG_WYJSCIA / "model.parquet"
 SCIEZKA_MANIFESTU = KATALOG_WYJSCIA / "manifest.json"
 
-# Liczebnosci z ostatniego zweryfikowanego przebiegu
+# liczebnosci z ostatniego sprawdzonego przebiegu pipeline'u
 OCZEKIWANE_WIERSZE = 13_709
 OCZEKIWANE_KOLUMNY = 115
 OCZEKIWANY_PODZIAL = {
@@ -39,7 +35,6 @@ OCZEKIWANY_PODZIAL = {
 
 @pytest.fixture(scope="module")
 def model() -> pd.DataFrame:
-    """Wczytuje zbior modelowy raz na caly modul testow."""
     if not SCIEZKA_MODELU.exists():
         pytest.skip(
             f"brak {SCIEZKA_MODELU} - uruchom "
@@ -72,7 +67,6 @@ def test_tylko_wybrane_sezony(model: pd.DataFrame):
 
 
 def test_primeira_liga_tylko_w_zbiorze_c(model: pd.DataFrame):
-    """Liga odlozona na pomiar przesuniecia dziedziny zostaje wylacznie w zbiorze C."""
     for zbior in ["trening", "kalibracja", "test"]:
         ligi = set(model.loc[model["podzial"] == zbior, "liga"])
         assert LIGA_ZBIOR_C not in ligi, f"{LIGA_ZBIOR_C} w zbiorze {zbior}"
@@ -83,7 +77,6 @@ def test_zbior_c_to_wylacznie_primeira_liga(model: pd.DataFrame):
 
 
 def test_sezony_zgodne_z_podzialem(model: pd.DataFrame):
-    """Kazdy zbior Big 5 obejmuje dokladnie te sezony, ktore mu przypisano."""
     for zbior, oczekiwane in [
         ("trening", SEZONY_TRENING),
         ("kalibracja", SEZONY_KALIBRACJA),
@@ -93,7 +86,6 @@ def test_sezony_zgodne_z_podzialem(model: pd.DataFrame):
 
 
 def test_pary_sa_rozlaczne_miedzy_zbiorami(model: pd.DataFrame):
-    """Kazda para (zawodnik, sezon) nalezy do dokladnie jednego zbioru."""
     zbiory = model["podzial"].unique()
     klucze = {
         z: set(map(tuple, model.loc[model["podzial"] == z, KLUCZ_SEZON].to_numpy()))
@@ -105,12 +97,7 @@ def test_pary_sa_rozlaczne_miedzy_zbiorami(model: pd.DataFrame):
 
 
 def test_flaga_znany_z_treningu(model: pd.DataFrame):
-    """
-    Flaga musi byc falszywa w treningu i zgodna z faktycznym skladem gdzie indziej.
-
-    Sluzy do stratyfikacji wynikow (D-12): model rozpoznaje zawodnikow, ktorych
-    juz widzial, wiec metryki dla znanych i nowych trzeba raportowac osobno.
-    """
+    """W treningu False, poza treningiem True dokladnie dla zawodnikow z treningu."""
     trening = model[model["podzial"] == "trening"]
     assert not trening["znany_z_treningu"].any()
 
@@ -128,7 +115,7 @@ def test_prog_minut(model: pd.DataFrame):
 
 
 def test_wskazniki_procentowe_w_zakresie(model: pd.DataFrame):
-    """Wskaznik miesci sie w [0, 100] albo jest NaN - brak strukturalny."""
+    """Wskaznik w [0, 100] albo NaN."""
     for kolumna in WSKAZNIKI_PROCENTOWE:
         obecne = model[kolumna].dropna()
         assert obecne.between(0, 100).all(), f"{kolumna} poza zakresem"
@@ -141,7 +128,7 @@ def test_cel_jest_dodatni_i_kompletny(model: pd.DataFrame):
 
 
 def test_cechy_p90_sa_skonczone(model: pd.DataFrame):
-    """Nieskonczonosc w _p90 oznaczalaby dzielenie przez zero minut."""
+    """Nieskonczonosc oznaczalaby dzielenie przez zero minut."""
     kolumny = [c for c in model.columns if c.endswith("_p90")]
     assert kolumny, "brak kolumn _p90"
     import numpy as np
@@ -151,12 +138,11 @@ def test_cechy_p90_sa_skonczone(model: pd.DataFrame):
 
 def test_wiek_w_sensownym_zakresie(model: pd.DataFrame):
     assert model["wiek"].between(14, 50).all()
-    # wiek_do_kw ma byc dokladnym kwadratem wieku z tego samego wiersza
     assert (model["wiek_do_kw"] == model["wiek"] ** 2).all()
 
 
 def test_kategoryczne_zostaly_tekstem(model: pd.DataFrame):
-    """Kodowanie ma sie dziac w Pipeline, na tekstowych kategoriach ze zbioru."""
+    """Kategorie zostaja tekstem, koduje je dopiero Pipeline (D-10)."""
     for kolumna in ["pozycja", "region", "liga", "noga"]:
         assert model[kolumna].dtype == object or isinstance(
             model[kolumna].dtype, pd.StringDtype
@@ -166,13 +152,9 @@ def test_kategoryczne_zostaly_tekstem(model: pd.DataFrame):
 
 
 def test_brak_kolumn_zabronionych(model: pd.DataFrame):
-    """
-    Zbior modelowy zostaje wolny od cech swiadomie wykluczonych.
-
-    """
+    """Brak zeszlorocznej wyceny (D-05), attendance i surowych sum."""
     assert "market_value_prev" not in model.columns
     assert "attendance" not in model.columns
-    # surowe sumy: kolumna licznikowa bez sufiksu _p90, ktora ma odpowiednik _p90
     for kolumna in ["goals", "xG", "total_completed", "minutes"]:
         assert kolumna not in model.columns, f"surowa suma {kolumna} w zbiorze"
 
@@ -181,7 +163,7 @@ def test_brak_kolumn_zabronionych(model: pd.DataFrame):
 
 
 def test_manifest_istnieje_i_opisuje_ten_plik(model: pd.DataFrame):
-    """Manifest ma dotyczyc tego samego przebiegu, co zapisany model.parquet."""
+    """Manifest opisuje ten sam przebieg, z ktorego jest model.parquet."""
     if not SCIEZKA_MANIFESTU.exists():
         pytest.skip("brak manifest.json")
 
