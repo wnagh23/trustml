@@ -75,7 +75,7 @@ def etap_10_zapisz(
     KATALOG_WYJSCIA.mkdir(parents=True, exist_ok=True)
     sezony = sezony.copy()
 
-    # kwadrat wieku dla modeli liniowych (wartosc rosnie do ok. 25 lat, potem spada)
+    # kwadrat wieku, zeby model liniowy mogl dopasowac parabole (szczyt ok. 23-24 lat)
     sezony["wiek_do_kw"] = sezony["wiek"] ** 2
 
     sciezka_pelny = KATALOG_WYJSCIA / "zawodnik_sezon.parquet"
