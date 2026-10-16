@@ -1,6 +1,6 @@
 {
   "ziarno": 20260829,
-  "prob_strojenia": 2,
+  "prob_strojenia": 100,
   "sha256_danych": "0703e0cf2029eb65f11217e2ba62dec853b6d7f435c3e2c890fbb53c30be5aa5",
   "sha256_konfiguracji": "386251514c335f028761d2ece33f1b0dc86a946df81eb869d09582cf0e723e91",
   "cel": "log_market_value",
@@ -12,23 +12,23 @@
   ],
   "najlepsze_hiperparametry": {
     "M1": {
-      "alpha": 0.015356276428860957,
-      "l1_ratio": 0.4744784411641054
+      "alpha": 0.00019975011356086783,
+      "l1_ratio": 0.9640520744241938
     },
     "M2": {
-      "n_estimators": 500,
-      "max_depth": 13,
-      "min_samples_leaf": 12,
-      "max_features": 0.3625103140755669
+      "n_estimators": 700,
+      "max_depth": 21,
+      "min_samples_leaf": 3,
+      "max_features": 0.6491156282687599
     },
     "M3": {
-      "n_estimators": 300,
-      "learning_rate": 0.025547078633702414,
-      "max_depth": 8,
-      "subsample": 0.6092021458617356,
-      "colsample_bytree": 0.608948806630117,
-      "min_child_weight": 5,
-      "reg_lambda": 1.9111584928632108
+      "n_estimators": 1100,
+      "learning_rate": 0.013217369054744205,
+      "max_depth": 5,
+      "subsample": 0.6238971350211218,
+      "colsample_bytree": 0.9952032505190826,
+      "min_child_weight": 19,
+      "reg_lambda": 2.3353535013792115
     }
   }
 }
