@@ -1,8 +1,6 @@
 """
-Polaczenie z Transfermarktem i dolaczenie zmiennej celu.
-
-ETAP 6  crosswalk FBref -> TM, cechy statyczne
-ETAP 7  wycena z okna IV-IX, najblizsza 30.06
+Etap 6: crosswalk FBref -> Transfermarkt i cechy statyczne (wzrost, noga).
+Etap 7: wycena z okna IV-IX, najblizsza 30.06.
 """
 
 from __future__ import annotations
@@ -25,18 +23,8 @@ from .parametry import (
 
 
 def znormalizuj_nazwe(seria: pd.Series) -> pd.Series:
-    """
-    Sprowadza nazwiska do postaci porownywalnej miedzy zrodlami.
-
-    Bez znakow diakrytycznych, male litery, tylko litery i spacje.
-
-    Przyjmuje:
-        seria - kolumna z nazwiskami
-
-    Zwraca:
-        kolumne znormalizowanych nazw.
-    """
-    # NFKD rozklada znak z akcentem na litere i akcent, a encode go wyrzuca.
+    """Nazwisko bez akcentow, malymi literami, tylko litery i spacje."""
+    # NFKD rozdziela litere i akcent, encode("ascii", "ignore") wyrzuca akcent
     rozlozone = seria.astype(str).map(lambda t: unicodedata.normalize("NFKD", t))
     bez_akcentow = rozlozone.str.encode("ascii", "ignore").str.decode("ascii")
     oczyszczone = bez_akcentow.str.lower().str.replace(r"[^a-z ]", "", regex=True)
@@ -50,20 +38,9 @@ def dopasuj_po_kluczu(
     klucz_tm: list[str],
 ) -> pd.DataFrame:
     """
-    Jeden krok kaskady: laczy po podanym kluczu, pomijajac kolizje.
+    Jeden krok kaskady: laczy po kluczu, a wartosci powtorzone odrzuca w calosci.
 
-    Wartosc klucza wystepujaca po ktorejkolwiek stronie wiecej niz raz odrzucamy
-    w calosci - lepiej zostawic zawodnika nastepnemu krokowi niz przypisac mu
-    cudza wycene.
-
-    Przyjmuje:
-        fbref_wolni - zawodnicy jeszcze niedopasowani
-        tm_wolne    - rekordy TM jeszcze nieprzypisane, z kolumna tm_player_id
-        klucz_fb    - kolumny klucza po stronie FBref
-        klucz_tm    - odpowiadajace im kolumny po stronie TM
-
-    Zwraca:
-        DataFrame z kolumnami player_id i tm_player_id.
+    Zwraca pary (player_id, tm_player_id).
     """
     fb = fbref_wolni.dropna(subset=klucz_fb).drop_duplicates(
         subset=klucz_fb, keep=False
@@ -81,22 +58,8 @@ def dopasuj_po_kluczu(
 
 def zbuduj_crosswalk(sezony: pd.DataFrame, tm: pd.DataFrame) -> pd.DataFrame:
     """
-    Mapowanie zawodnik FBref -> zawodnik TM, kaskada trzystopniowa.
-
-    Kazdy klucz zawodzi gdzie indziej, wiec sie uzupelniaja:
-        1. nazwa + data urodzenia - najpewniejszy, rozroznia imiennikow
-        2. data urodzenia + kraj  - dziala mimo roznic w nazwie, lapie pseudonimy
-        3. sama nazwa             - reszta
-
-    Najpewniejszy klucz idzie pierwszy, zeby przy konflikcie to on decydowal.
-    Pokrycie 97,5% wobec 83,7% dla samej nazwy.
-
-    Przyjmuje:
-        sezony - tabela z etapu 5
-        tm     - wczytany players.csv
-
-    Zwraca:
-        DataFrame z kolumnami player_id i tm_player_id.
+    Mapuje zawodnikow FBref na TM w trzech krokach: nazwa + data urodzenia,
+    data urodzenia + kraj, sama nazwa. Zwraca pary (player_id, tm_player_id).
     """
     fbref = (
         sezony[["player_id", "name", "data_urodzenia", "kod_kraju"]]
@@ -138,10 +101,7 @@ def zbuduj_crosswalk(sezony: pd.DataFrame, tm: pd.DataFrame) -> pd.DataFrame:
         "1. nazwa + data urodzenia",
     )
 
-    # Kraje zapisane sa inaczej po obu stronach: "BRA" kontra "Brazil". Mape
-    # wyprowadzamy z dopasowan kroku 1, co oszczedza recznego wpisania 143 krajow.
-    # Do nauczenia kodu wystarczy dowolny zawodnik z danego kraju - Henrique
-    # korzysta potem z gotowej mapy.
+    # FBref ma kody ("BRA"), TM nazwy ("Brazil"); mape biore z dopasowan kroku 1
     krok1 = czesci[0]
     pewne = krok1.merge(fbref[["player_id", "kod_kraju"]], on="player_id").merge(
         tm[["tm_player_id", "country_of_citizenship"]], on="tm_player_id"
@@ -190,17 +150,9 @@ def zbuduj_crosswalk(sezony: pd.DataFrame, tm: pd.DataFrame) -> pd.DataFrame:
 
 def etap_6_crosswalk(sezony: pd.DataFrame) -> pd.DataFrame:
     """
-    Laczy zawodnikow z Transfermarktem i dokleja cechy statyczne.
+    Laczy pary z Transfermarktem i dokleja wzrost i noge.
 
-    Statystyki pochodza z FBref, a zmienna celu z Transfermarktu. Oba zrodla
-    uzywaja wlasnych identyfikatorow, a jedynym pomostem miedzy nimi sa nazwisko
-    i data urodzenia.
-
-    Przyjmuje:
-        sezony - tabela z etapu 5
-
-    Zwraca:
-        tabele z samymi dopasowanymi parami, z tm_player_id, wzrostem i noga.
+    Odrzuca dopasowania z data urodzenia rozna o wiecej niz MAX_ROZNICA_DAT_DNI.
     """
     print("\nETAP 6  crosswalk do Transfermarktu i cechy statyczne")
 
@@ -217,11 +169,7 @@ def etap_6_crosswalk(sezony: pd.DataFrame) -> pd.DataFrame:
         f"({100 * len(sezony) / na_wejsciu:.1f}% pokrycia)"
     )
 
-    # Utrata ma charakter systematyczny, choc kaskada mocno ja zmniejszyla.
-    # Zawodnicy brazylijscy i portugalscy wystepuja pod jednoczlonowymi
-    # pseudonimami, ktore czesciej koliduja. Ma to znaczenie dla W2 (zbior_C)
-    # i W5 (region jako atrybut chroniony), wiec raportujemy przy kazdym
-    # uruchomieniu.
+    # strata nie jest losowa (pseudonimy brazylijskie i portugalskie), wiec ja wypisuje
     print("  utrata wg ligi i regionu:")
     for kolumna in ["liga", "region"]:
         przed = przed_crosswalkiem[kolumna].value_counts()
@@ -230,8 +178,7 @@ def etap_6_crosswalk(sezony: pd.DataFrame) -> pd.DataFrame:
         opis = "  ".join(f"{k} {v:.1f}%" for k, v in udzial.items())
         print(f"    {opis}")
 
-    # Z TM bierzemy wylacznie wzrost i noge. Pozycje i narodowosc mamy wlasne,
-    # liczone z rzeczywistych minut.
+    # z TM biore tylko wzrost i noge; pozycja i narodowosc sa z FBref
     cechy = tm[["player_id", "height_in_cm", "foot", "date_of_birth"]].rename(
         columns={
             "player_id": "tm_player_id",
@@ -254,9 +201,7 @@ def etap_6_crosswalk(sezony: pd.DataFrame) -> pd.DataFrame:
         f"{dict(sezony['noga'].value_counts())}"
     )
 
-    # Data urodzenia jest niezaleznym swiadkiem poprawnosci dopasowania: FBref
-    # liczy ja z wieku przy meczu, TM podaje wprost. Duza rozbieznosc oznacza
-    # innego zawodnika, czyli cudza wycene w wierszu.
+    # data urodzenia z FBref i z TM - niezalezna kontrola dopasowania
     roznica = (sezony["data_urodzenia"] - sezony["data_urodzenia_tm"]).dt.days.abs()
     niezgodne = (roznica > 0).sum()
     print(
@@ -264,8 +209,7 @@ def etap_6_crosswalk(sezony: pd.DataFrame) -> pd.DataFrame:
         f"({100 * niezgodne / roznica.notna().sum():.2f}%)"
     )
 
-    # Porownanie z NaN daje False, wiec pary bez daty w TM zostaja - sam brak daty
-    # jest za slaba przeslanka do odrzucenia.
+    # NaN > 7 daje False, wiec pary bez daty w TM zostaja
     bledne = (roznica > MAX_ROZNICA_DAT_DNI).reindex(sezony.index, fill_value=False)
     print(
         f"  odrzucam {bledne.sum()} par o rozbieznosci > {MAX_ROZNICA_DAT_DNI} dni "
@@ -278,8 +222,7 @@ def etap_6_crosswalk(sezony: pd.DataFrame) -> pd.DataFrame:
     assert not przypisania["tm_player_id"].duplicated().any(), (
         "ten sam zawodnik TM przypisany dwom zawodnikom FBref"
     )
-    # W players.csv zdarzaja sie wzrosty rzedu 17 cm. Asercja pilnuje, zeby kazdy
-    # wzrost w zbiorze miescil sie w realnym zakresie.
+    # w players.csv zdarzaja sie bledne wzrosty (np. 17 cm)
     obecne = sezony["wzrost_cm"].dropna()
     assert obecne.between(150, 215).all(), (
         f"nierealny wzrost: {obecne.min()}-{obecne.max()}"
@@ -297,16 +240,9 @@ def etap_6_crosswalk(sezony: pd.DataFrame) -> pd.DataFrame:
 
 def etap_7_dolacz_wycene(sezony: pd.DataFrame) -> pd.DataFrame:
     """
-    Dokleja zmienna objasniana - wartosc rynkowa z Transfermarktu.
+    Dokleja market_value_in_eur: wycena z okna IV-IX roku t najblizsza 30.06.
 
-    To model wyceny biezacej: cechy opisuja sezon konczacy sie w roku t, a cel
-    pochodzi z okolic 30 czerwca tego samego roku.
-
-    Przyjmuje:
-        sezony - tabela z etapu 6
-
-    Zwraca:
-        tabele z samymi parami majacymi wycene, z kolumna market_value_in_eur.
+    Pary bez wyceny w oknie odpadaja.
     """
     print("\nETAP 7  dolaczenie wyceny (okno IV-IX, najblizsza 30.06)")
 
@@ -316,15 +252,11 @@ def etap_7_dolacz_wycene(sezony: pd.DataFrame) -> pd.DataFrame:
     wyceny = pd.read_csv(SCIEZKA_TM / "player_valuations.csv")
     wyceny["date"] = pd.to_datetime(wyceny["date"])
     wyceny = wyceny.rename(columns={"player_id": "tm_player_id"})
-    # Zawezenie przed laczeniem - inaczej 508 tys. wycen probowaloby sie polaczyc
-    # z kazda para.
     wyceny = wyceny[wyceny["tm_player_id"].isin(sezony["tm_player_id"])]
 
     sezony["rok_t"] = sezony["season"].str[-4:].astype(int)
 
-    # Laczymy sam klucz - przy calej szerokiej tabeli kazda z 200 kolumn zostalaby
-    # powielona tyle razy, ile zawodnik ma wycen. To laczenie jest
-    # z zalozenia wiele-do-wielu, wiec bez validate.
+    # laczenie wiele-do-wielu (para x wszystkie wyceny zawodnika), wiec bez validate
     kandydaci = sezony[["tm_player_id", "season", "rok_t"]].merge(
         wyceny[["tm_player_id", "date", "market_value_in_eur"]],
         on="tm_player_id",
@@ -342,9 +274,7 @@ def etap_7_dolacz_wycene(sezony: pd.DataFrame) -> pd.DataFrame:
     w_oknie["dni_od_30_06"] = (w_oknie["date"] - odniesienie[w_oknie.index]).dt.days
     w_oknie["odleglosc"] = w_oknie["dni_od_30_06"].abs()
 
-    # Przy jednakowej odleglosci decyduje wczesniejsza data. Zmierzone: dzis zbior
-    # jest wolny od remisow, a warunek daje wynik niezalezny od kolejnosci wierszy
-    # w CSV.
+    # przy tej samej odleglosci wygrywa wczesniejsza data
     w_oknie = w_oknie.sort_values(["tm_player_id", "season", "odleglosc", "date"])
     wybrane = w_oknie.drop_duplicates(subset=["tm_player_id", "season"], keep="first")
 
@@ -366,8 +296,6 @@ def etap_7_dolacz_wycene(sezony: pd.DataFrame) -> pd.DataFrame:
         validate="one_to_one",
     )
 
-    # Wycena zerowa jest ekonomicznie pusta, a po zlogarytmowaniu zlewa sie
-    # z zawodnikiem wartym 1 euro.
     niedodatnie = (sezony["market_value_in_eur"] <= 0).sum()
     if niedodatnie:
         print(f"  odrzucam {niedodatnie} par z wycena <= 0")
@@ -382,8 +310,6 @@ def etap_7_dolacz_wycene(sezony: pd.DataFrame) -> pd.DataFrame:
     print(f"\n  stan po etapie: {len(sezony)} par")
     print(f"    mediana wyceny {sezony['market_value_in_eur'].median():>12,.0f} EUR")
     print(f"    srednia        {sezony['market_value_in_eur'].mean():>12,.0f} EUR")
-    # Do sledzenia inflacji sluzy srednia z logarytmu - TM wycenia w okraglych
-    # progach, wiec surowa mediana stoi na tym samym progu przez kilka sezonow.
     print("\n    sezon        mediana      srednia   sr. log")
     for sezon, grupa in sezony.groupby("season"):
         print(

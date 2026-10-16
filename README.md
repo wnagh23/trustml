@@ -1,13 +1,13 @@
 # trustml
 
-**A framework for evaluating how far you can trust a machine learning model, not just how accurate it is.**
+**A framework for evaluating how far a machine learning model can be trusted, not just how accurate it is.**
 
 MSc thesis project, AGH University of Krakow (Computer Science – Data Science, defence planned for July 2027).
-Status: work in progress. The data pipeline, validation protocol and baselines are done; reliability dimensions are being built stage by stage (see [Roadmap](#roadmap)).
+Status: work in progress. The data pipeline, validation protocol, baselines and first models are done; the remaining reliability dimensions are built stage by stage (see [Roadmap](#roadmap)).
 
 ## The idea
 
-A single accuracy score hides most of what matters once a model is used in practice. `trustml` takes any scikit-learn–compatible model and produces a standardised report across six dimensions:
+A single accuracy score says little about how a model behaves in practice. `trustml` takes any scikit-learn–compatible model and produces a standardised report across six dimensions:
 
 | | Dimension | Question it answers | Main measure |
 |---|---|---|---|
@@ -18,53 +18,54 @@ A single accuracy score hides most of what matters once a model is used in pract
 | W5 | Fairness | Is it equally accurate and unbiased across groups? | Per-group error gaps and mean residual (region, age, position, league) |
 | W6 | Reproducibility | Can the result be recreated? | Metric spread across random seeds, complete run records |
 
-The working hypothesis: **model rankings disagree across dimensions.** The most accurate model is not necessarily the most robust or the best calibrated. If that were false, R² would be enough. The main experimental result is a model × dimension matrix with rank correlations between dimensions.
+Working hypothesis: **model rankings differ between dimensions.** The most accurate model is not necessarily the most robust or the best calibrated. The main result will be a model × dimension matrix with rank correlations between dimensions.
 
 ## Case study: football player market values
 
-The demonstration domain is predicting a player's Transfermarkt market value from match statistics (FBref), for the Big 5 European leagues.
+The demonstration task is predicting a player's Transfermarkt market value from match statistics (FBref) in the Big 5 European leagues.
 
-- **Dataset:** 13,709 player-seasons × 114 columns, 5,310 players, seasons 2017/18–2023/24 (2019/20 excluded: Ligue 1 played only 279 of 380 matches).
+- **Dataset:** 13,709 player-seasons × 115 columns, 5,310 players, seasons 2017/18–2023/24 (2019/20 excluded: Ligue 1 played only 279 of 380 matches).
 - **Target:** `log1p(market value in EUR)`.
 - **Temporal split:** train 2017/18–2021/22, calibration 2022/23, test 2023/24. A random split would put the same player in train and test, and market values are strongly correlated year to year.
 - **Domain shift set:** the Portuguese Primeira Liga is held out entirely, to measure how the model behaves on a league it has never seen.
-- **Hyperparameter tuning:** GroupKFold by player inside the training set only; the test set stays untouched.
+- **Hyperparameter tuning:** Optuna with GroupKFold by player inside the training set only; the test set stays untouched.
 
-### Preliminary results (stage E5, test set 2023/24)
+### Results so far (stage E5, test set 2023/24)
 
 | Model | RMSLE ↓ | R² (log scale) ↑ |
 |---|---|---|
 | M0a – global median | 1.27 | −0.05 |
 | M0b – median per position × league | 1.17 | 0.10 |
-| M1 – Elastic Net | 0.69 | 0.69 |
-| M2 – Random Forest | 0.71 | 0.67 |
-| M3 – XGBoost | 0.66 | 0.72 |
-| M0c – last season's market value | 0.53 | 0.81 |
+| M0c – last season's value, full test (missing filled with M0b) | 0.76 | 0.62 |
+| M1 – Elastic Net | 0.67 | 0.71 |
+| M2 – Random Forest | 0.70 | 0.68 |
+| M3 – XGBoost | 0.65 | 0.73 |
+| M0c – last season's value, only players with a value last season (72% of test) | 0.53 | 0.81 |
 
-Two things worth stating openly:
+Notes:
 
-- **Last season's value beats every model.** Models are deliberately denied the previous valuation, so they must learn from on-pitch statistics alone; M0c is a reference point, not a competitor. Its strength shows that Transfermarkt valuations are sticky and largely human-driven, which is also the conclusion of my bachelor's thesis on the same problem.
-- **These numbers come from a short diagnostic tuning run** and will be refreshed after the full Optuna search. Every metric is also reported per league, position and "player seen in training vs. new player", because a single overall number hides large differences between those groups.
+- **Last season's value is a reference point, not a competitor.** Models are not given the previous valuation, so they have to work from on-pitch statistics. On the players who have a previous value, simply copying it is better than any model. On the full test set, where 28% of players have no previous value, all three models beat it. Valuations are sticky from year to year, which matches the conclusion of my bachelor's thesis on the same problem.
+- **Overall numbers hide differences between groups.** Every metric is also reported per league, position and "player seen in training vs. new player". For example, M3 has R² 0.76 on known players and 0.65 on new ones.
 
 ![Age vs. market value in the Big 5 leagues](reports/figures/eda/a3_krzywa_wieku.png)
 
-*From the exploratory analysis: market value peaks around age 23–25, and forwards are valued highest at almost every age. Figure labels are in Polish.*
+*From the exploratory analysis: the fitted curve peaks around age 23–24, and forwards are valued highest at almost every age. The very young look expensive because the 225-minute filter keeps only those already playing in the Big 5. Figure labels are in Polish.*
 
 ## Engineering choices
 
-- **Leakage protection as code:** `tests/test_no_leakage.py` checks that no player-season appears in two sets and that the Primeira Liga never reaches training or calibration.
-- **Frozen evaluation protocol:** `configs/split.yaml` fixes seasons, grouping, metrics and the SHA-256 of the dataset it applies to. Changing the rules after seeing results is the quietest way to fool yourself.
+- **Leakage tests:** `tests/test_no_leakage.py` checks that no player-season appears in two sets and that the Primeira Liga never reaches training or calibration.
+- **Fixed evaluation protocol:** `configs/split.yaml` fixes seasons, grouping, metrics and the SHA-256 of the dataset it applies to, so the rules cannot quietly change after seeing results.
 - **Data provenance:** `data/processed/manifest.json` stores checksums of every input file, library versions, all parameters and row counts after each pipeline step.
 - **Validated merges:** every join uses `validate=`. The previous version of this pipeline joined players by name without validation and silently produced 846 duplicated player-season pairs.
-- **Decision log:** every non-obvious choice (metrics, deflation, back-transformation from log scale, etc.) is recorded with its reason in `docs/03-decyzje.md`.
+- **Decision log:** every non-obvious choice (metrics, deflation, back-transformation from log scale, etc.) is recorded with its reason in `docs/decyzje.md`.
 
 ## Project structure
 
 ```
 src/trustml/            the library, domain-independent (metrics, splits, baselines, pipeline)
 case_study/football/    data pipeline, EDA and modelling for the case study
-configs/                frozen evaluation protocol
-docs/                   project, data, decisions, plan, EDA write-up (Polish)
+configs/                evaluation protocol
+docs/                   data, decision log, plan (Polish)
 reports/                figures and result tables
 tests/                  data, metric, pipeline and leakage tests
 ```
@@ -75,15 +76,14 @@ Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 uv sync
-uv pip install -e .
-pytest            # data-dependent tests are skipped if the dataset is absent
+uv run pytest     # data-dependent tests are skipped if the dataset is absent
 ```
 
 Raw data is not included. FBref match data (`data/raw/fbref/master.db`) and Transfermarkt valuations from the Kaggle dataset [`davidcariboo/player-scores`](https://www.kaggle.com/datasets/davidcariboo/player-scores) (`players.csv`, `player_valuations.csv` in `data/raw/tm/`) are needed to rebuild the dataset:
 
 ```bash
 python -m case_study.football.przygotuj_dane       # build the modelling dataset
-python -m case_study.football.uruchom_eda          # exploratory analysis (~10 s)
+python -m case_study.football.uruchom_eda          # exploratory analysis
 python -m case_study.football.poziom_odniesienia   # baselines M0a–M0c
 python -m case_study.football.modelowanie          # tune and evaluate M1–M3
 ```

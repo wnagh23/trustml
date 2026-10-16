@@ -1,12 +1,4 @@
-"""
-Testy wspolnego Pipeline przetwarzania cech (etap E5).
-
-    pytest tests/test_pipeline.py -v
-
-Trzy rzeczy sa tu warte pilnowania, bo psuja sie po cichu: kodowanie kategorii
-z upuszczonym poziomem (D-10), zgubienie flagi braku (O-3) i niedeterministyczny
-filtr korelacyjny, ktory rozchwialby ranking waznosci cech miedzy przebiegami.
-"""
+"""Testy wspolnego przetwarzania cech: filtr korelacyjny, one-hot i flaga braku."""
 
 from __future__ import annotations
 
@@ -20,11 +12,11 @@ from trustml.models import FiltrKorelacyjny, zbuduj_przetwarzanie
 
 @pytest.fixture
 def ramka() -> pd.DataFrame:
-    """Cztery kolumny liczbowe, dwie kategoryczne, jedna niewymieniona nigdzie."""
+    """4 kolumny liczbowe, 2 kategoryczne i jedna, ktorej nie ma w zadnej liscie."""
     return pd.DataFrame(
         {
             "a": [1.0, 2.0, 3.0, 4.0, 5.0],
-            # b jest dokladna kopia a przemnozona przez dwa
+            # b = 2 * a
             "b": [2.0, 4.0, 6.0, 8.0, 10.0],
             "c": [5.0, 1.0, 4.0, 2.0, 3.0],
             "d_z_brakiem": [1.0, np.nan, 3.0, np.nan, 5.0],
@@ -45,7 +37,7 @@ KATEGORYCZNE = ["pozycja", "liga"]
 def test_filtr_usuwa_kopie_kolumny():
     X = np.array([[1.0, 2.0, 5.0], [2.0, 4.0, 1.0], [3.0, 6.0, 4.0], [4.0, 8.0, 2.0]])
     filtr = FiltrKorelacyjny(prog=0.95).fit(X)
-    # kolumna 1 jest wielokrotnoscia kolumny 0, wiec wypada ta pozniejsza
+    # kolumna 1 = 2 * kolumna 0, wypada pozniejsza
     assert list(filtr.zachowane_) == [True, False, True]
     assert filtr.transform(X).shape == (4, 2)
 
@@ -58,14 +50,13 @@ def test_filtr_wylaczony_przepuszcza_wszystko():
 
 
 def test_filtr_znosi_kolumne_stala():
-    """Kolumna stala daje NaN w macierzy korelacji i nie moze wywrocic filtra."""
+    """Kolumna stala (NaN w macierzy korelacji) nie psuje filtra."""
     X = np.array([[1.0, 7.0], [2.0, 7.0], [3.0, 7.0]])
     filtr = FiltrKorelacyjny(prog=0.95).fit(X)
     assert filtr.zachowane_.all()
 
 
 def test_filtr_zachowuje_nazwy_cech():
-    """Nazwy sa potrzebne w W4 - bez nich ranking SHAP opisuje numery kolumn."""
     X = np.array([[1.0, 2.0, 5.0], [2.0, 4.0, 1.0], [3.0, 6.0, 4.0]])
     filtr = FiltrKorelacyjny(prog=0.95).fit(X)
     assert list(filtr.get_feature_names_out(["a", "b", "c"])) == ["a", "c"]
@@ -92,14 +83,11 @@ def test_filtr_odrzuca_inna_liczbe_kolumn():
 
 def test_koder_nie_upuszcza_poziomu(ramka: pd.DataFrame):
     """
-    Pulapka drop="first" z D-10.
+    OneHotEncoder bez drop (D-10).
 
-    Upuszczenie pierwszego poziomu rozklada wage kategorii odniesienia na wyraz
-    wolny, przez co ranking waznosci cech przestaje byc porownywalny miedzy
-    modelami. Wynik W4 zalezy od tego ustawienia, wiec pilnujemy go testem.
+    Z drop="first" nieznana liga (same zera) wygladalaby jak kategoria usunieta.
     """
     przetwarzanie = zbuduj_przetwarzanie(LICZBOWE, KATEGORYCZNE)
-    # transformers to lista trojek (nazwa, transformator, kolumny)
     koder = next(
         t for nazwa, t, _ in przetwarzanie.transformers if nazwa == "kategoryczne"
     )
@@ -109,13 +97,13 @@ def test_koder_nie_upuszcza_poziomu(ramka: pd.DataFrame):
 
     przetwarzanie.fit(ramka)
     nazwy = list(przetwarzanie.get_feature_names_out())
-    # trzy pozycje i dwie ligi to piec kolumn, bez zadnego poziomu odniesienia
+    # 3 pozycje + 2 ligi = 5 kolumn
     assert sum(n.startswith("pozycja_") for n in nazwy) == 3
     assert sum(n.startswith("liga_") for n in nazwy) == 2
 
 
 def test_nieznana_kategoria_nie_wywraca_przetwarzania(ramka: pd.DataFrame):
-    """Primeira Liga bedzie w E11 kategoria nieznana - ma dac zera, nie wyjatek."""
+    """Nieznana liga (Primeira Liga w E11) daje same zera, a nie wyjatek."""
     przetwarzanie = zbuduj_przetwarzanie(LICZBOWE, KATEGORYCZNE).fit(ramka)
     nowa = ramka.iloc[[0]].copy()
     nowa["liga"] = "Primeira_Liga"
@@ -130,20 +118,14 @@ def test_nieznana_kategoria_nie_wywraca_przetwarzania(ramka: pd.DataFrame):
 
 
 def test_imputacja_dokleja_flage_braku(ramka: pd.DataFrame):
-    """
-    Braki procentowe sa strukturalne i skoncentrowane pozycyjnie.
-
-    Sama imputacja mediana wprowadzalaby obciazenie grupowe, wiec obok wartosci
-    wstawionej ma isc kolumna mowiaca, ze wartosci tam nie bylo.
-    """
+    """Imputacja dokleja kolumne z flaga braku (D-26)."""
     przetwarzanie = zbuduj_przetwarzanie(LICZBOWE, KATEGORYCZNE).fit(ramka)
     nazwy = list(przetwarzanie.get_feature_names_out())
     flagi = [n for n in nazwy if "missingindicator" in n.lower()]
     assert len(flagi) == 1, f"oczekiwano jednej flagi braku, sa: {flagi}"
 
-    # Flaga przechodzi przez StandardScaler razem z reszta, wiec nie ma juz
-    # wartosci 0 i 1. Sprawdzamy to, co ma znaczenie: rozdziela wiersze z brakiem
-    # od pozostalych i przyjmuje dokladnie dwie wartosci.
+    # flaga przechodzi przez StandardScaler, wiec nie jest juz 0/1 - sprawdzam,
+    # ze ma dwie wartosci i rozdziela wiersze z brakiem od reszty
     wynik = przetwarzanie.transform(ramka)
     kolumna = wynik[:, nazwy.index(flagi[0])]
     z_brakiem = [1, 3]
@@ -164,11 +146,6 @@ def test_brak_zostaje_zastapiony_mediana(ramka: pd.DataFrame):
 
 
 def test_kolumna_niewymieniona_nie_wchodzi_do_modelu(ramka: pd.DataFrame):
-    """
-    remainder="drop": do modelu wchodzi wylacznie to, co ktos wymienil z nazwy.
-
-    Klucze, metadane i zmienna celu leza w tym samym pliku, wiec domyslne
-    przepuszczanie reszty konczyloby sie wyciekiem celu do cech.
-    """
+    """remainder="drop": kolumny spoza list (np. cel) nie wchodza do modelu."""
     przetwarzanie = zbuduj_przetwarzanie(LICZBOWE, KATEGORYCZNE).fit(ramka)
     assert "nieuzywana" not in list(przetwarzanie.get_feature_names_out())

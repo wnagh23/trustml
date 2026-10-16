@@ -1,23 +1,17 @@
-"""
-Parametry przygotowania danych.
-
-"""
+"""Parametry przygotowania danych."""
 
 from pathlib import Path
 
 
 def znajdz_korzen_repo(start: Path) -> Path:
-    """
-    Idzie w gore katalogow, az znajdzie pyproject.toml.
-
-    """
+    """Idzie w gore katalogow, az znajdzie pyproject.toml."""
     for katalog in [start, *start.parents]:
         if (katalog / "pyproject.toml").exists():
             return katalog
     raise RuntimeError(f"nie znalazlem korzenia repozytorium, szukajac od {start}")
 
 
-# Sciezki. data/raw otwieramy wylacznie do odczytu.
+# Sciezki. data/raw tylko do odczytu.
 KATALOG_REPO = znajdz_korzen_repo(Path(__file__).resolve())
 SCIEZKA_DB = KATALOG_REPO / "data" / "raw" / "fbref" / "master.db"
 SCIEZKA_TM = KATALOG_REPO / "data" / "raw" / "tm"
@@ -26,7 +20,7 @@ KATALOG_WYJSCIA = KATALOG_REPO / "data" / "processed"
 
 # --- Zrodla FBref ---
 
-# Tabele statystyk polowych. Goalkeeper pomijamy, bo odrzucamy bramkarzy.
+# Bez tabeli Goalkeeper - bramkarzy pomijam (D-07).
 TABELE_POLOWE = [
     "Summary",
     "Passing",
@@ -36,19 +30,13 @@ TABELE_POLOWE = [
     "Miscellaneous",
 ]
 
-# Klucze: wystep w meczu i para zawodnik-sezon.
 KLUCZ = ["match_id", "player_id"]
 KLUCZ_SEZON = ["player_id", "season"]
 
-# Z tabeli Match bierzemy tylko kontekst zawodnika. Reszta opisuje mecz.
-# Attendance swiadomie pomijamy: 94% brakow w sezonie 2020-2021, braki
-# skorelowane z sezonem, wiec cecha bylaby znacznikiem pandemii.
+# Attendance pomijam: 94% brakow w sezonie 2020-2021, bylaby znacznikiem pandemii.
 KOLUMNY_Z_MATCH = ["match_id", "competition", "season", "date"]
 
-# FBref powiela te same metryki w kilku tabelach. Sprawdzono wartosc po wartosci
-# na wszystkich wierszach - ponizsze sa identyczne z odpowiednikiem w tabeli
-# szczegolowej i zostaja usuniete. Zostawienie ich dawaloby pary cech
-# skorelowanych w 100%, co psuje ranking waznosci cech (W4).
+# Kolumny identyczne z kolumnami w innych tabelach (sprawdzone na wszystkich wierszach).
 KOLUMNY_ZREDUNDOWANE = {
     "Summary": [
         "assists",
@@ -64,11 +52,10 @@ KOLUMNY_ZREDUNDOWANE = {
         "passes_completed",
         "passes_attempted",
         "pass_completion_percentage",
-        # Uwaga: te dwie sa w Summary zamienione miejscami (udane > probowane
-        # w 173 tys. wierszy). Bierzemy wersje z Possession.
+        # w Summary te dwie sa zamienione miejscami, biore wersje z Possession
         "successful_dribbles",
         "dribbles_attempted",
-        # Summary.xA to w rzeczywistosci xAG - zgadza sie z Passing.xAG w 100%.
+        # Summary.xA to w rzeczywistosci xAG, takie samo jak Passing.xAG
         "xA",
     ],
     "Pass_Types": [
@@ -82,9 +69,7 @@ KOLUMNY_ZREDUNDOWANE = {
     ],
 }
 
-# Kolizja nazw przy dwoch roznych metrykach:
-#   Pass_Types.offsides    - podania zagrane na spalonego (wina podajacego)
-#   Miscellaneous.offsides - spalone zlapane przez zawodnika (wina przyjmujacego)
+# Dwie rozne metryki o tej samej nazwie: spalone z podan i spalone zawodnika.
 ZMIANY_NAZW = {
     "Pass_Types": {"offsides": "offsides_z_podan"},
 }
@@ -92,10 +77,8 @@ ZMIANY_NAZW = {
 
 # --- Filtry zbioru ---
 
-# Z dziewieciu dostepnych sezonow zostaje szesc:
-#   2019-2020 - Ligue 1 rozegrala 279 z 380 meczow (pandemia)
-#   2024-2025 - 25% brakow zmiennej celu, skorelowanych z liga
-#   2025-2026 - sezon w trakcie
+# Odrzucone: 2019-2020 (Ligue 1 279/380 meczow), 2024-2025 (25% brakow celu),
+# 2025-2026 (sezon trwa). Patrz D-08.
 SEZONY = [
     "2017-2018",
     "2018-2019",
@@ -105,16 +88,12 @@ SEZONY = [
     "2023-2024",
 ]
 
-# Prog minut w sezonie. Ponizej statystyki per 90 sa szumem: jedno podanie
-# w 10 minut daje 9 podan na 90. Parametr do analizy wrazliwosci - przy 225
-# zostaje 81% par, przy 450 okolo 74%, przy 900 okolo 60%.
+# Ponizej progu statystyki per 90 to szum (1 podanie w 10 minut = 9 na 90).
 MIN_MINUT = 225
 
 
 # --- Slowniki ---
 
-# Pozycje FBref sprowadzone do trzech klas. Bramkarzy (GK) odrzucamy - ocenia
-# sie ich osobnym zestawem metryk, zbieranym wylacznie dla nich.
 MAPA_POZYCJI = {
     "CB": "DEF",
     "LB": "DEF",
@@ -130,8 +109,7 @@ MAPA_POZYCJI = {
     "FW": "FOR",
 }
 
-# Ameryka Poludniowa jako osobny region - rynek wycenia tych zawodnikow inaczej
-# (premia za potencjal, koszt adaptacji). Lista CONMEBOL.
+# Kraje CONMEBOL.
 KODY_AMERYKA_PLD = frozenset(
     {
         "ARG",
@@ -147,9 +125,7 @@ KODY_AMERYKA_PLD = frozenset(
     }
 )
 
-# Europa wedlug UEFA, czyli wedlug podzialu rynku pilkarskiego. Stad ISR, ARM,
-# AZE, GEO, KAZ i RUS. Wielka Brytania to cztery federacje, a Kosowo ma
-# w FBref kod KVX.
+# Europa wedlug UEFA (stad m.in. ISR, KAZ, RUS). Kosowo ma w FBref kod KVX.
 KODY_EUROPA = frozenset(
     {
         "ALB",
@@ -213,16 +189,9 @@ KODY_EUROPA = frozenset(
 
 # --- Agregacja ---
 
-# Wskaznik procentowy: nazwa -> (licznik, lista kolumn mianownika).
-#
-# Sumujemy liczniki i mianowniki z poziomu meczu, a wskaznik liczymy dopiero
-# na poziomie sezonu. Usrednianie procentow dawaloby meczowi z dwiema probami
-# te sama wage co meczowi z osmioma: 1/2 i 0/8 daje srednio 25%, a poprawnie
-# 1/10 = 10%. Zmierzony blad naiwnej sredniej siega 33 p.p.
-#
-# Kazda para zweryfikowana na danych - odtwarza procent FBref w 100% wierszy.
-# Uwaga: tackled_perecentage ma literowke w schemacie zrodlowym, wiec wymyka sie
-# wyszukiwaniu po ciagu "percent". Stad jawna lista.
+# Wskaznik: (licznik, kolumny mianownika). Licze sume licznikow / sume mianownikow
+# w sezonie, nie srednia z procentow z meczow.
+# Jawna lista, bo tackled_perecentage ma w zrodle literowke.
 WSKAZNIKI_PROCENTOWE = {
     "completion_percentage": ("total_completed", ["total_attempted"]),
     "short_completion_percentage": ("short_completed", ["short_attempted"]),
@@ -234,13 +203,10 @@ WSKAZNIKI_PROCENTOWE = {
         "dribblers_tackled",
         ["attempted_tackles_vs_dribblers"],
     ),
-    # Mianownik z dwoch kolumn - FBref podaje osobno wygrane i przegrane pojedynki.
     "aerials_won_percentage": ("aerials_won", ["aerials_won", "aerials_lost"]),
 }
 
-# Kolumny spoza statystyki licznikowej. Statystyki do zsumowania wyznaczamy
-# jako "cala reszta" - gdyby FBref dolozyl nowa metryke, trafi do sumowania
-# automatycznie.
+# Kolumny, ktorych nie sumuje. Wszystko inne traktuje jako statystyke licznikowa.
 KOLUMNY_NIELICZNIKOWE = [
     "match_id",
     "player_id",
@@ -260,7 +226,7 @@ KOLUMNY_NIELICZNIKOWE = [
     "region",
     "minutes",
     "pozycja_mecz",
-    # utworzone przy agregacji - podsumowania calego sezonu
+    # tworzone przy agregacji
     "minuty_sezon",
     "mecze",
     "mecze_od_poczatku",
@@ -272,40 +238,26 @@ KOLUMNY_NIELICZNIKOWE = [
 
 # --- Transfermarkt ---
 
-# Prog zgodnosci dat urodzenia przy weryfikacji crosswalku. Rozbieznosc powyzej
-# tygodnia oznacza innego zawodnika, czyli cudza wycene w wierszu. Ponizej -
-# drobna niescislosc zrodla. Test opiera sie wylacznie na datach, wiec odrzucenie
-# na jego podstawie zostawia zmienna celu nietknieta.
+# Wieksza roznica dat urodzenia FBref/TM oznacza innego zawodnika.
 MAX_ROZNICA_DAT_DNI = 7
 
-# Okno wyceny dla sezonu konczacego sie w roku t: bierzemy obserwacje z okresu
-# 1.04 - 30.09 i wybieramy te najblizsza 30 czerwca. Maksimum z kilku obserwacji
-# byloby estymatorem obciazonym w gore i premiowaloby zawodnikow czesciej
-# wycenianych. Zapisane jako koncowki dat doklejane do roku.
+# Okno wyceny dla sezonu konczacego sie w roku t: 1.04-30.09, wycena najblizsza 30.06.
 OKNO_WYCENY_OD = "-04-01"
 OKNO_WYCENY_DO = "-09-30"
 DZIEN_ODNIESIENIA = "-06-30"
 
 
-# --- Podzial zbiorow ---
+# --- Podzial zbiorow (D-16) ---
 
-# Podzial czasowy: uczymy sie na przeszlosci, oceniamy na nastepnym
-# sezonie. Kalibracja jest osobna, bo predykcja konformalna kalibrowana na
-# treningu daje zawyzone pokrycie (W3).
 SEZONY_TRENING = ["2017-2018", "2018-2019", "2020-2021", "2021-2022"]
 SEZONY_KALIBRACJA = ["2022-2023"]
 SEZONY_TEST = ["2023-2024"]
 
-# Liga odlozona w calosci na pomiar przesuniecia dziedziny (W2). Wystepuje
-# wylacznie poza treningiem i kalibracja.
+# Liga odlozona na pomiar przesuniecia dziedziny.
 LIGA_ZBIOR_C = "Primeira_Liga"
 
 
 # --- Indeks inflacji ---
 
-# Przedzialy wieku do porownan o stalym skladzie - zeby ruch cen dalo sie
-# oddzielic od efektu starzenia sie.
 PRZEDZIALY_WIEKU = [0, 20, 22, 24, 26, 28, 30, 32, 99]
-
-# Komorki mniejsze niz tyle obserwacji pomijamy.
 MIN_OBSERWACJI_KOMORKA = 20

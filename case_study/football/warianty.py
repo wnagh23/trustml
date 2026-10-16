@@ -1,26 +1,10 @@
 """
-Analizy wrazliwosci dla etapu E5.
+Analizy wrazliwosci E5 na najlepszym modelu (hiperparametry z e5_metryczka.json).
 
     python -m case_study.football.warianty
 
-Trzy pytania, na kazde jeden przebieg najlepszego modelu z `e5_metryczka.json`.
-Hiperparametry biore z tego pliku zamiast stroic od nowa, bo pytanie brzmi
-"ile kosztuje ta decyzja", a nie "jak dobry moze byc model".
-
-D-04. Cel nominalny wobec zdeflowanego. Inflacja wycen w Big 5 siega 38 procent
-miedzy pierwszym a ostatnim sezonem, a poziom testu lezy 18,4 procent powyzej
-treningu, wiec model uczony na cenach nominalnych powinien systematycznie zanizac.
-Zeby porownanie bylo uczciwe, predykcje modelu zdeflowanego wracaja do euro
-nominalnych przez wspolczynnik sezonu i dopiero tam sa oceniane. Bez tego kroku
-porownywalibysmy dwie rozne zmienne celu.
-
-D-25. Koszt usuniecia pary wskaznikow dryblingu. Przebieg z tymi cechami
-przywroconymi pokazuje, ile dokladnosci oddajemy za brak przesuniecia definicji
-na granicy podzialu. Dolaczamy do niego ceche graniczna, ktora w zbiorze zostala.
-
-O-7. Koszt filtra korelacyjnego przy progu 0,95. Druga polowa bilansu, czyli
-stabilnosc rankingu SHAP, domyka sie w W4 - tutaj mierzymy wylacznie to, co filtr
-zabiera po stronie dokladnosci.
+Warianty: cel zdeflowany (D-04), przywrocona para dryblingu (D-25),
+filtr korelacyjny 0.95 (O-7).
 """
 
 from __future__ import annotations
@@ -53,13 +37,7 @@ PROG_FILTRA = 0.95
 
 
 def wspolczynniki_deflacji(dane: pd.DataFrame) -> np.ndarray:
-    """
-    Odtwarza wspolczynnik indeksu inflacji dla kazdego wiersza.
-
-    Etap 9 pipeline'u liczyl `market_value_real = market_value_in_eur / wspolczynnik`,
-    wiec iloraz obu kolumn oddaje wspolczynnik dokladnie. Indeks powstal wylacznie
-    na sezonach treningowych, wiec sciagniecie go stad nie jest wyciekiem.
-    """
+    """Wspolczynnik deflacji dla kazdego wiersza: nominalna / realna (z etapu 9)."""
     return (dane["market_value_in_eur"] / dane["market_value_real"]).to_numpy()
 
 
@@ -75,21 +53,9 @@ def wynik_wariantu(
     przelicz_na_nominalny: bool = False,
 ) -> pd.DataFrame:
     """
-    Uczy podany model na treningu i ocenia go na kalibracji oraz tescie.
+    Uczy model na treningu i ocenia na kalibracji i tescie (uklad jak e5_w1.csv).
 
-    Przyjmuje:
-        nazwa                 - etykieta wariantu
-        opis                  - zdanie do kolumny "opis"
-        model                 - niedopasowany Pipeline
-        dane                  - caly zbior modelowy
-        X_all                 - te same wiersze, ograniczone do kolumn cech
-        cel                   - kolumna celu, na ktorej model sie uczy
-        osie                  - osie stratyfikacji
-        przelicz_na_nominalny - czy predykcje wracaja z celu zdeflowanego
-                                do euro nominalnych przed ocena
-
-    Zwraca:
-        ramke o ukladzie zgodnym z e5_w1.csv.
+    `przelicz_na_nominalny` zamienia predykcje celu realnego na euro nominalne.
     """
     trening = (dane["podzial"] == "trening").to_numpy()
     model.fit(X_all[trening], dane.loc[trening, cel].to_numpy())
@@ -100,8 +66,7 @@ def wynik_wariantu(
         surowa = model.predict(X_all[maska])
         if not przelicz_na_nominalny:
             return surowa
-        # z log1p realnych euro na realne euro, przez wspolczynnik sezonu
-        # na euro nominalne i z powrotem na skale, w ktorej liczymy metryki
+        # log1p(realne) -> realne euro -> nominalne euro -> log1p(nominalne)
         return np.log1p(np.expm1(surowa) * wspolczynniki[maska])
 
     duan = wspolczynnik_duana(
@@ -126,14 +91,13 @@ def wynik_wariantu(
 
 
 def main() -> None:
-    """Liczy trzy warianty najlepszego modelu i zapisuje porownanie."""
+    """Liczy warianty najlepszego modelu i zapisuje e5_warianty.csv."""
     metryczka = json.loads(
         (KATALOG_TABEL / "e5_metryczka.json").read_text(encoding="utf-8")
     )
     podstawa = pd.read_csv(KATALOG_TABEL / "e5_w1.csv")
 
-    # Najlepszy model wybieramy po RMSLE na kalibracji - test zostaje nietkniety
-    # do ostatniego pomiaru.
+    # najlepszy model wybieram po kalibracji, nie po tescie
     calosc = podstawa[
         (podstawa["zbior"] == "kalibracja") & (podstawa["os"] == "calosc")
     ]
@@ -152,7 +116,7 @@ def main() -> None:
 
     warianty = []
 
-    # Punkt odniesienia dla tej tabeli: ten sam model, ten sam cel, bez zmian.
+    # punkt odniesienia: konfiguracja bez zmian
     warianty.append(
         wynik_wariantu(
             f"{najlepszy}_odniesienie",
@@ -167,7 +131,7 @@ def main() -> None:
         )
     )
 
-    # D-04: cel zdeflowany, predykcje przeliczone z powrotem na euro nominalne.
+    # D-04: cel zdeflowany
     warianty.append(
         wynik_wariantu(
             f"{najlepszy}_cel_zdeflowany",
@@ -183,7 +147,7 @@ def main() -> None:
         )
     )
 
-    # D-25: para dryblingu przywrocona, razem z cecha graniczna.
+    # D-25: para dryblingu przywrocona
     liczbowe_z_para = liczbowe + CECHY_ZMIENIONE
     warianty.append(
         wynik_wariantu(
@@ -201,7 +165,7 @@ def main() -> None:
         )
     )
 
-    # O-7: filtr korelacyjny przy progu 0,95.
+    # O-7: filtr korelacyjny
     warianty.append(
         wynik_wariantu(
             f"{najlepszy}_filtr_{PROG_FILTRA}",

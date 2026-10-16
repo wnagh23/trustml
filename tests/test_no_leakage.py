@@ -1,17 +1,6 @@
 """
-Testy protokolu podzialu (etap E4).
-
-    pytest tests/test_no_leakage.py -v
-
-Sprawdzaja trzy rzeczy: ze zadna para zawodnik-sezon nie wystepuje w dwoch
-zbiorach naraz, ze konfiguracja z `configs/split.yaml` opisuje te dane, ktore
-faktycznie leza na dysku, oraz ze GroupKFold nie rozrzuca jednego zawodnika po
-czesci uczacej i walidacyjnej.
-
-Osobna sprawa jest przeciecie samych zawodnikow miedzy zbiorami. Ono puste nie
-jest i nie ma byc - podzial jest czasowy, wiec ten sam zawodnik wraca w kolejnych
-sezonach. Test ponizej pilnuje, zeby ta liczba zgadzala sie z flaga
-`znany_z_treningu`, bo caly raport metryk stratyfikuje sie po niej (D-12).
+Testy podzialu: brak wspolnych par zawodnik-sezon miedzy zbiorami, zgodnosc
+danych z split.yaml i GroupKFold bez dzielenia zawodnika miedzy foldy.
 """
 
 from __future__ import annotations
@@ -35,13 +24,11 @@ SCIEZKA_KONFIGURACJI = KATALOG_REPO / "configs" / "split.yaml"
 
 @pytest.fixture(scope="module")
 def konfiguracja() -> dict:
-    """Wczytuje protokol podzialu raz na caly modul."""
     return wczytaj_konfiguracje(SCIEZKA_KONFIGURACJI)
 
 
 @pytest.fixture(scope="module")
 def model() -> pd.DataFrame:
-    """Wczytuje zbior modelowy raz na caly modul testow."""
     if not SCIEZKA_MODELU.exists():
         pytest.skip(
             f"brak {SCIEZKA_MODELU} - uruchom "
@@ -55,11 +42,9 @@ def model() -> pd.DataFrame:
 
 def test_odcisk_danych_zgadza_sie_z_konfiguracja(konfiguracja: dict):
     """
-    Konfiguracja opisuje ten plik danych, ktory faktycznie lezy na dysku.
+    SHA-256 model.parquet zgadza sie z split.yaml.
 
-    Ten test przestaje przechodzic po kazdym przebiegu pipeline'u zmieniajacym
-    model.parquet. Wtedy trzeba swiadomie wpisac nowy odcisk do split.yaml
-    i przeliczyc wyniki - o to tu chodzi.
+    Po zmianie danych trzeba recznie wpisac nowy odcisk i przeliczyc wyniki.
     """
     if not SCIEZKA_MODELU.exists():
         pytest.skip("brak model.parquet")
@@ -91,7 +76,7 @@ def test_liga_odlozona_wystepuje_tylko_w_zbiorze_c(
 
 
 def test_brakujacy_sezon_nie_wrocil(model: pd.DataFrame, konfiguracja: dict):
-    """Luka kalendarzowa jest czescia protokolu, wiec pilnujemy jej jawnie."""
+    """Sezon 2019-2020 ma byc nieobecny."""
     assert konfiguracja["podzial_zewnetrzny"]["brakujacy_sezon"] not in set(
         model["season"]
     )
@@ -103,7 +88,6 @@ def test_brakujacy_sezon_nie_wrocil(model: pd.DataFrame, konfiguracja: dict):
 def test_pary_nie_powtarzaja_sie_miedzy_zbiorami(
     model: pd.DataFrame, konfiguracja: dict
 ):
-    """Kazda para (zawodnik, sezon) nalezy do dokladnie jednego zbioru."""
     klucz = konfiguracja["podzial_zewnetrzny"]["klucz_obserwacji"]
     przeciecia = raport_przeciec(model, klucz=klucz)
     wadliwe = przeciecia[przeciecia["wspolnych_par"] > 0]
@@ -116,13 +100,7 @@ def test_klucz_pokrywa_caly_zbior(model: pd.DataFrame, konfiguracja: dict):
 
 
 def test_wspolni_zawodnicy_sa_udokumentowani(model: pd.DataFrame, konfiguracja: dict):
-    """
-    Przeciecie zawodnikow miedzy treningiem a testem istnieje i ma byc opisane.
-
-    Podzial czasowy z definicji zostawia tych samych ludzi po obu stronach.
-    Liczba musi sie zgadzac z flaga znany_z_treningu co do wiersza - inaczej
-    stratyfikacja z D-12 mierzylaby cos innego, niz deklaruje.
-    """
+    """Wspolni zawodnicy trening/test zgadzaja sie z flaga znany_z_treningu (D-12)."""
     klucz = konfiguracja["podzial_zewnetrzny"]["klucz_obserwacji"]
     przeciecia = raport_przeciec(model, klucz=klucz)
     wiersz = przeciecia[
@@ -142,7 +120,6 @@ def test_wspolni_zawodnicy_sa_udokumentowani(model: pd.DataFrame, konfiguracja: 
 
 
 def test_groupkfold_nie_dzieli_zawodnika(model: pd.DataFrame, konfiguracja: dict):
-    """Wszystkie sezony jednego zawodnika trafiaja do tej samej czesci."""
     grupa = konfiguracja["podzial_wewnetrzny"]["kolumna_grupujaca"]
     n = konfiguracja["podzial_wewnetrzny"]["n_podzialow"]
     grupy = model.loc[model["podzial"] == "trening", grupa].to_numpy()
@@ -154,7 +131,6 @@ def test_groupkfold_nie_dzieli_zawodnika(model: pd.DataFrame, konfiguracja: dict
 def test_groupkfold_pokrywa_trening_dokladnie_raz(
     model: pd.DataFrame, konfiguracja: dict
 ):
-    """Kazdy wiersz treningowy bywa w czesci walidacyjnej dokladnie jeden raz."""
     grupa = konfiguracja["podzial_wewnetrzny"]["kolumna_grupujaca"]
     n = konfiguracja["podzial_wewnetrzny"]["n_podzialow"]
     grupy = model.loc[model["podzial"] == "trening", grupa].to_numpy()
@@ -168,7 +144,6 @@ def test_groupkfold_pokrywa_trening_dokladnie_raz(
 
 
 def test_groupkfold_jest_deterministyczny(model: pd.DataFrame, konfiguracja: dict):
-    """Dwa wywolania daja identyczny podzial - wymog wymiaru W6."""
     grupa = konfiguracja["podzial_wewnetrzny"]["kolumna_grupujaca"]
     n = konfiguracja["podzial_wewnetrzny"]["n_podzialow"]
     grupy = model.loc[model["podzial"] == "trening", grupa].to_numpy()
@@ -189,11 +164,6 @@ def test_poprzedni_sezon_cofa_o_rok():
 
 
 def test_m0c_siega_wylacznie_w_przeszlosc(model: pd.DataFrame):
-    """
-    Zrodlo wyceny dla M0c lezy zawsze w sezonie wczesniejszym niz oceniany.
-
-    Test jest tani, a chroni przed najlatwiejsza do popelnienia pomylka
-    w tym baseline: przesunieciem w druga strone.
-    """
+    """M0c bierze wycene z sezonu wczesniejszego, nie pozniejszego."""
     for sezon in model.loc[model["podzial"] == "test", "season"].unique():
         assert poprzedni_sezon(sezon) < sezon

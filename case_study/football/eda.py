@@ -1,29 +1,15 @@
 """
-Analiza eksploracyjna zbioru modelowego (etap E3).
+Analiza eksploracyjna (etap E3), jedna funkcja na pytanie A1-A12.
 
-Kazda funkcja w tym module odpowiada na jedno pytanie z listy E3 w `04-plan.md`,
-zapisuje figure do `reports/figures/eda/`, tabele do `reports/tables/eda/`
-i zwraca slownik liczb, ktore trafiaja do raportu `docs/05-eda.md`. Dzieki temu
-kazda liczba w raporcie ma zrodlo w uruchamialnym kodzie, zgodnie z zasada pracy
-z `01-projekt.md`.
-
-Uruchomienie calosci:
-
-    python -m case_study.football.uruchom_eda
-
-Zasada dostepu do zbioru C (D-14): cechy zbioru C sa tutaj analizowane swobodnie,
-bo pomiar przesuniecia rozkladow cech jest dostepny w kazdym wdrozeniu bez etykiet.
-Zmienna celu zbioru C pojawia sie wylacznie jako liczby juz zapisane w `02-dane.md`.
-Zbior testowy sluzy tu tylko do pomiaru przesuniecia cech - kazda ocena jakosci
-modelu w tym module liczy sie na zbiorze kalibracyjnym.
+Uruchomienie: python -m case_study.football.uruchom_eda
+Ze zbioru C uzywam tylko cech, bez celu (D-14). Jakosc modeli licze na kalibracji.
 """
 
 from __future__ import annotations
 
 import matplotlib
 
-# Backend "Agg" rysuje do pliku i nie probuje otwierac okna. Ustawienie musi
-# poprzedzac import pyplot, bo backend wybiera sie raz, przy inicjalizacji.
+# Agg zapisuje wykresy do pliku bez okna; musi byc ustawione przed importem pyplot
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
@@ -41,63 +27,42 @@ KATALOG_TABEL = KATALOG_REPO / "reports" / "tables" / "eda"
 
 # --- Parametry analizy ---
 
-# Progi, przy ktorych sprawdzamy redundancje cech. Filtr korelacyjny w E5 dostanie
-# jedna z tych wartosci, wiec liczymy koszt kazdej.
+# Progi korelacji do sprawdzenia redundancji cech.
 PROGI_KORELACJI = (0.99, 0.95, 0.90)
 
-# Prog, dla ktorego mierzymy, ile filtr korelacyjny faktycznie kupuje na jakosci.
+# Prog, dla ktorego mierze koszt filtra korelacyjnego (O-7).
 PROG_FILTRA_DO_POMIARU = 0.95
 
-# Prog laczenia cech w bloki przy grupowaniu hierarchicznym. Blok oznacza
-# zestaw cech o sredniej korelacji bezwzglednej co najmniej tej wartosci.
+# Bloki cech przy grupowaniu hierarchicznym: srednia |korelacja| >= 0.5.
 PROG_BLOKU_CECH = 0.5
 
-# Progi minut do analizy wrazliwosci. Wartosc 225 jest progiem obowiazujacym
-# (D-08), wiec ponizej niej dane w zbiorze modelowym juz nie istnieja.
+# Progi minut do analizy wrazliwosci; ponizej 225 danych juz nie ma (D-08).
 PROGI_MINUT = (225, 450, 900, 1350)
 
-# Liczba koszy w indeksie PSI. Dziesiec decyli to konwencja z monitoringu modeli
-# kredytowych, skad ta miara pochodzi.
+# PSI na 10 koszach i progi 0.10 / 0.25 - standardowe wartosci.
 KOSZE_PSI = 10
-
-# Progi interpretacyjne PSI, rowniez konwencjonalne.
 PSI_UMIARKOWANY = 0.10
 PSI_DUZY = 0.25
 
-# Kolejnosc sezonow do wykresow. Sortowanie alfabetyczne daje tu poprawna
-# kolejnosc chronologiczna, bo sezon zapisany jest jako "RRRR-RRRR".
 POZYCJE = ("DEF", "MID", "FOR")
 
 
 # --- Infrastruktura ---
 
-# Slownik zbierajacy wszystkie liczby, ktore trafia do raportu. Klucz jest
-# tekstowa nazwa faktu, wartosc - liczba albo krotki napis.
+# Wszystkie liczby do raportu; na koncu zapisywane do fakty.json.
 FAKTY: dict[str, object] = {}
 
 
 def zapisz_fakt(klucz: str, wartosc) -> None:
-    """
-    Odklada jedna liczbe do wspolnego slownika faktow.
-
-    Slownik jest zmienna modulowa, wiec funkcje analityczne moga do niego dopisywac
-    bez przekazywania go w argumentach. Na koncu przebiegu zrzucamy go do JSON-a,
-    zeby raport dalo sie zweryfikowac liczba po liczbie.
-    """
-    # numpy zwraca wlasne typy (np.float64), ktorych json nie umie zapisac.
-    # `item()` wyciaga z nich zwykly float albo int Pythona.
+    """Dopisuje liczbe do slownika FAKTY."""
+    # typy numpy (np.float64) nie przechodza przez json
     if hasattr(wartosc, "item"):
         wartosc = wartosc.item()
     FAKTY[klucz] = wartosc
 
 
 def ustaw_styl() -> None:
-    """
-    Wspolny styl figur. Wywolywane raz, na poczatku przebiegu.
-
-    `rcParams` to globalny slownik ustawien matplotlib - zmiana tutaj dziala
-    na wszystkie pozniej tworzone wykresy.
-    """
+    """Wspolny styl wykresow."""
     plt.rcParams.update(
         {
             "figure.dpi": 130,
@@ -119,7 +84,6 @@ def zapisz_figure(fig, nazwa: str) -> None:
     """Zapisuje figure pod `reports/figures/eda/<nazwa>.png` i zwalnia pamiec."""
     KATALOG_FIGUR.mkdir(parents=True, exist_ok=True)
     fig.savefig(KATALOG_FIGUR / f"{nazwa}.png")
-    # Bez close matplotlib trzyma kazda figure w pamieci do konca procesu.
     plt.close(fig)
     print(f"    figura  reports/figures/eda/{nazwa}.png")
 
@@ -132,14 +96,7 @@ def zapisz_tabele(tabela: pd.DataFrame, nazwa: str) -> None:
 
 
 def wczytaj() -> tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Wczytuje oba pliki z `data/processed/`.
-
-    Zwraca:
-        (model, sezony) - zbior modelowy oraz pelny zbior kontrolny z surowymi
-        sumami sezonowymi. Ten drugi jest potrzebny wszedzie tam, gdzie pytamy
-        o liczniki i mianowniki wskaznikow albo o date wyceny.
-    """
+    """Zwraca (model.parquet, zawodnik_sezon.parquet z surowymi sumami)."""
     model = pd.read_parquet(KATALOG_WYJSCIA / "model.parquet")
     sezony = pd.read_parquet(KATALOG_WYJSCIA / "zawodnik_sezon.parquet")
     return model, sezony
@@ -147,16 +104,9 @@ def wczytaj() -> tuple[pd.DataFrame, pd.DataFrame]:
 
 def kolumny_cech(model: pd.DataFrame) -> dict[str, list[str]]:
     """
-    Dzieli kolumny zbioru na bloki tematyczne.
+    Dzieli kolumny na grupy: p90, procentowe, liczbowe, kategoryczne.
 
-    Bloki wracaja wielokrotnie - przy korelacjach, przy dryfie i przy sufcie
-    informacyjnym - wiec wyznaczamy je raz, w jednym miejscu.
-
-    Wskazniki procentowe bierzemy z `WSKAZNIKI_PROCENTOWE`, a nie z dopasowania
-    nazwy do wzorca. Kolumna `tackled_perecentage` ma literowke w schemacie
-    zrodlowym, wiec `endswith("percentage")` znajduje siedem wskaznikow zamiast
-    osmiu i gubi akurat ten, ktory ma najwiecej brakow. Slownik z `parametry.py`
-    jest lista rozstrzygajaca.
+    Procentowe biore z WSKAZNIKI_PROCENTOWE, bo tackled_perecentage ma literowke.
     """
     procentowe = [k for k in WSKAZNIKI_PROCENTOWE if k in model.columns]
     return {
@@ -168,12 +118,7 @@ def kolumny_cech(model: pd.DataFrame) -> dict[str, list[str]]:
 
 
 def big5(model: pd.DataFrame) -> pd.DataFrame:
-    """
-    Zwraca same wiersze Big 5, czyli wszystko poza zbiorem C.
-
-    Wiekszosc analiz celu dotyczy wylacznie Big 5, bo cel zbioru C zostaje
-    zamkniety do eksperymentu koncowego (D-14).
-    """
+    """Wiersze Big 5, czyli bez zbioru C (D-14)."""
     return model[model["podzial"] != "zbior_C"]
 
 
@@ -181,12 +126,7 @@ def big5(model: pd.DataFrame) -> pd.DataFrame:
 
 
 def a1_rozklad_celu(model: pd.DataFrame) -> None:
-    """
-    Rozklad celu w trzech wersjach: nominalnej, logarytmicznej i zdeflowanej.
-
-    Odpowiada na pierwszy punkt E3. Sprawdzamy symetrie po log1p, ktora jest
-    uzasadnieniem D-03, oraz ziarnistosc siatki wycen Transfermarktu.
-    """
+    """A1: rozklad celu (nominalny, log1p, zdeflowany) i ziarnistosc wycen TM."""
     print("\nA1  rozklad zmiennej celu")
     b = big5(model)
 
@@ -202,8 +142,7 @@ def a1_rozklad_celu(model: pd.DataFrame) -> None:
             f"kurtoza {seria.kurtosis():+7.3f}"
         )
 
-    # Ziarnistosc celu. `value_counts(normalize=True)` daje udzialy zamiast liczb,
-    # a `cumsum` po posortowaniu malejaco mowi, ile progow zbiera zadany udzial masy.
+    # ziarnistosc: ile progow wyceny zbiera dany udzial obserwacji
     udzialy = b["market_value_in_eur"].value_counts(normalize=True)
     skumulowane = udzialy.sort_values(ascending=False).cumsum()
     zapisz_fakt("a1_unikalnych_progow", int(b["market_value_in_eur"].nunique()))
@@ -226,7 +165,7 @@ def a1_rozklad_celu(model: pd.DataFrame) -> None:
         xlabel="wartość [mln EUR]",
         ylabel="liczba par zawodnik-sezon",
     )
-    # Skala logarytmiczna na osi Y, bo ogon nominalny jest dlugi i plaski.
+    # os Y w skali log, inaczej ogon jest niewidoczny
     osie[0].set_yscale("log")
 
     osie[1].hist(b["log_market_value"], bins=60, color="#55A868")
@@ -243,7 +182,6 @@ def a1_rozklad_celu(model: pd.DataFrame) -> None:
     fig.suptitle("A1. Rozkład zmiennej celu, Big 5", y=1.04)
     zapisz_figure(fig, "a1_rozklad_celu")
 
-    # Osobna figura na ziarnistosc: dwadziescia najczestszych progow.
     fig, os_ = plt.subplots(figsize=(7, 3.6))
     naj = udzialy.head(20).sort_index()
     os_.bar(range(len(naj)), naj.to_numpy() * 100, color="#4C72B0")
@@ -263,13 +201,9 @@ def a1_rozklad_celu(model: pd.DataFrame) -> None:
 
 def a2_deflacja(model: pd.DataFrame) -> None:
     """
-    Czy po zdeflowaniu poziom celu jest plaski w czasie.
+    A2: czy po deflacji srednia log-wartosc jest plaska w kolejnych sezonach.
 
-    Test jest prosty: liczymy srednia log-wartosci w kazdym sezonie, osobno dla
-    celu nominalnego i realnego, i porownujemy rozstepy. Indeks liczony jest
-    wylacznie na treningu (etap 9), wiec plaskosc obowiazuje z gory na sezonach
-    treningowych. To, co zostaje poza treningiem, jest cena przedluzenia
-    ostatniego wspolczynnika na sezony pozniejsze.
+    Indeks jest liczony tylko na treningu, wiec poza treningiem poziom moze uciekac.
     """
     print("\nA2  skutecznosc deflacji")
     b = big5(model)
@@ -350,8 +284,7 @@ def a2_deflacja(model: pd.DataFrame) -> None:
         label="cel zdeflowany",
         color="#C44E52",
     )
-    # Pionowa linia w miejscu, gdzie konczy sie trening i zaczyna plaskie
-    # przedluzenie wspolczynnika deflacji.
+    # koniec treningu
     os_.axvline(len(sezony_treningowe) - 0.5, color="black", linestyle=":", linewidth=1)
     os_.text(
         len(sezony_treningowe) - 0.45,
@@ -376,17 +309,9 @@ def a2_deflacja(model: pd.DataFrame) -> None:
 
 def a3_krzywa_wieku(model: pd.DataFrame) -> None:
     """
-    Ksztalt zaleznosci wiek - wartosc oraz uzasadnienie cechy `wiek_do_kw`.
+    A3: krzywa wiek-wartosc. Czy parabola (wiek_do_kw) ma sens?
 
-    Plan E3 stawia pytanie wprost: jesli ksztalt odbiega od paraboli, cecha
-    `wiek_do_kw` jest ozdobnikiem i trzeba to napisac. Mierzymy to liczbowo,
-    porownujac trzy dopasowania na tych samych danych:
-      - prosta, czyli sam wiek,
-      - parabola, czyli wiek i wiek do kwadratu,
-      - srednia w kazdym roczniku, czyli model nieparametryczny wyznaczajacy
-        sufit osiagalny dowolna funkcja samego wieku.
-    Iloraz R2 paraboli i R2 sufitu mowi, jaka czesc informacji o wieku parabola
-    faktycznie zbiera.
+    Porownuje R2 prostej, paraboli i srednich w rocznikach (najlepsze, co da sam wiek).
     """
     print("\nA3  krzywa wiek-wartosc")
     b = big5(model)
@@ -396,19 +321,14 @@ def a3_krzywa_wieku(model: pd.DataFrame) -> None:
         """Udzial wariancji celu wyjasniony przez podana prognoze."""
         return float(1 - np.var(y - prognoza) / np.var(y))
 
-    # `np.polyfit(x, y, stopien)` dopasowuje wielomian metoda najmniejszych
-    # kwadratow i zwraca wspolczynniki od najwyzszej potegi. `np.polyval` liczy
-    # z nich wartosci wielomianu w zadanych punktach.
     prosta = np.polyfit(x, y, 1)
     parabola = np.polyfit(x, y, 2)
-    # `transform("mean")` podstawia kazdemu wierszowi srednia jego grupy
-    # i zachowuje dlugosc serii, wiec wychodzi gotowa prognoza nieparametryczna.
     sufit = b.groupby("wiek")["log_market_value"].transform("mean").to_numpy()
 
     r2_prosta = r2(np.polyval(prosta, x))
     r2_parabola = r2(np.polyval(parabola, x))
     r2_sufit = r2(sufit)
-    # Wierzcholek paraboli a*w^2 + b*w + c lezy w punkcie -b / (2a).
+    # wierzcholek paraboli: -b / (2a)
     wierzcholek = float(-parabola[1] / (2 * parabola[0]))
 
     zapisz_fakt("a3_r2_prosta", round(r2_prosta, 4))
@@ -434,9 +354,7 @@ def a3_krzywa_wieku(model: pd.DataFrame) -> None:
     )
     zapisz_tabele(rocznik.round(3), "a3_krzywa_wieku")
 
-    # Najmlodsi zawodnicy sa w tym zbiorze drozsi niz zawodnicy w szczycie
-    # kariery. Prog 225 minut przepuszcza z rocznika osiemnastolatkow wylacznie
-    # tych, ktorzy dostaja gre w Big 5, czyli talenty juz wycenione wysoko.
+    # 18-latkowie wychodza drozsi od 25-latkow - efekt progu 225 minut
     liczni = rocznik[rocznik["par"] >= 30]
     for wiek in (18, 25):
         zapisz_fakt(
@@ -498,17 +416,7 @@ def a3_krzywa_wieku(model: pd.DataFrame) -> None:
 
 
 def a4_struktura_panelu(model: pd.DataFrame) -> None:
-    """
-    Ilu zawodnikow w ilu sezonach, czyli wejscie do GroupKFold w E4.
-
-    Grupowanie po `player_id` ma sens wtedy, gdy grup jest duzo wiecej niz foldow,
-    a jednoczesnie czesc zawodnikow powtarza sie na tyle czesto, ze podzial losowy
-    faktycznie rozrzucilby ich po foldach. Obie liczby sa tutaj.
-
-    Przy okazji mierzymy lepkosc wyceny rok do roku. Cecha `market_value_prev`
-    zostala odcieta modelom (D-05), a sama sila tej zaleznosci opisuje zadanie
-    i uzasadnia baseline M0c z D-06.
-    """
+    """A4: ile sezonow na zawodnika (pod GroupKFold) i korelacja wyceny rok do roku."""
     print("\nA4  struktura panelu")
 
     sezonow_na_zawodnika = model.groupby("player_id")["season"].nunique()
@@ -539,9 +447,8 @@ def a4_struktura_panelu(model: pd.DataFrame) -> None:
         f"({len(trening) / grupy_treningowe:.2f} wiersza na zawodnika)"
     )
 
-    # Lepkosc wyceny. Numerujemy sezony rosnaco, kopie tabeli przesuwamy o jeden
-    # sezon do przodu i laczymy - zostaja pary (zawodnik, sezon t) z dolaczona
-    # wycena z sezonu t-1.
+    # pary (zawodnik, t) z wycena z poprzedniego sezonu w danych; uwaga: numeracja
+    # pozycyjna, wiec 2018-2019 i 2020-2021 licza sie tu jako sasiednie
     kolejnosc = {s: i for i, s in enumerate(sorted(model["season"].unique()))}
     biezacy = model[["player_id", "season", "market_value_in_eur", "podzial"]].copy()
     biezacy["t"] = biezacy["season"].map(kolejnosc)
@@ -613,17 +520,10 @@ def a4_struktura_panelu(model: pd.DataFrame) -> None:
 
 def a5_podgrupy(model: pd.DataFrame) -> None:
     """
-    Rozklad celu w podgrupach oraz premia grupowa po kontroli obserwowalnych.
+    A5: cel w podgrupach (pozycja, liga, region, noga, zmiana ligi).
 
-    Sama mediana w grupie miesza dwie rzeczy: sklad grupy i wycene grupy. Region
-    AMERYKA_PLD ma inny rozklad wieku i inny rozklad lig niz EUROPA, wiec roznica
-    surowych median moze pochodzic w calosci ze skladu. Dlatego liczymy tez
-    premie warunkowa: dopasowujemy regresje liniowa na wieku, kwadracie wieku,
-    pozycji, lidze i sezonie, a potem usredniamy reszty w kazdej grupie. To, co
-    zostaje, jest czescia niewyjasniona przez te kontrole.
-
-    Wynik jest wstepna diagnoza W5 (sprawiedliwosc) postawiona przed
-    jakimkolwiek modelem - opisuje obciazenie wycen rynku, a nie modelu.
+    Obok mediany licze "premie warunkowa": srednia reszte z regresji na wieku,
+    pozycji, lidze i sezonie, zeby oddzielic sklad grupy od jej wyceny.
     """
     print("\nA5  cel i cechy w podgrupach")
     from sklearn.linear_model import LinearRegression
@@ -633,21 +533,16 @@ def a5_podgrupy(model: pd.DataFrame) -> None:
     kontrole_kat = ["pozycja", "liga", "season"]
     kontrole_num = ["wiek", "wiek_do_kw"]
 
-    # `sparse_output=False` kaze enkoderowi zwrocic zwykla tablice numpy zamiast
-    # macierzy rzadkiej, co upraszcza sklejenie z kolumnami liczbowymi.
     enkoder = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
 
     def premia(kolumna: str) -> pd.DataFrame:
         """
-        Srednia reszta w grupie po odjeciu wplywu wieku, pozycji, ligi i sezonu.
+        Srednia reszta w grupach `kolumna` po kontroli wieku, pozycji, ligi i sezonu.
 
-        Analizowana zmienna wypada ze zbioru kontroli. Gdyby zostala, model
-        kontrolny wyjasnilby jej wplyw w calosci i kazda premia wyszlaby rowna
-        zeru z samej konstrukcji.
+        Badana zmienna wypada z kontroli, inaczej premia zawsze wyszlaby 0.
         """
         d = b[b[kolumna].notna()]
         kategoryczne = [k for k in kontrole_kat if k != kolumna]
-        # `np.hstack` skleja tablice w poziomie, czyli dokleja kolumny.
         macierz = np.hstack(
             [enkoder.fit_transform(d[kategoryczne]), d[kontrole_num].to_numpy()]
         )
@@ -655,7 +550,7 @@ def a5_podgrupy(model: pd.DataFrame) -> None:
         reszta = d["log_market_value"] - model_kontrolny.predict(macierz)
         wynik = reszta.groupby(d[kolumna]).agg(["size", "mean"])
         wynik.columns = ["par", "srednia_reszta"]
-        # Reszta jest w skali logarytmicznej, wiec exp zamienia ja na mnoznik.
+        # reszta jest w skali log, exp daje mnoznik
         wynik["mnoznik"] = np.exp(wynik["srednia_reszta"])
         return wynik
 
@@ -678,7 +573,6 @@ def a5_podgrupy(model: pd.DataFrame) -> None:
     tabela = pd.concat(surowe)
     zapisz_tabele(tabela.round(4), "a5_podgrupy")
 
-    # Fakty do raportu: najwieksze premie warunkowe.
     for grupa in ["AMERYKA_PLD", "EUROPA", "RESZTA"]:
         w = tabela[(tabela["zmienna"] == "region")].loc[grupa]
         zapisz_fakt(f"a5_mnoznik_region_{grupa}", round(float(w["mnoznik"]), 3))
@@ -698,8 +592,7 @@ def a5_podgrupy(model: pd.DataFrame) -> None:
         int(tabela[tabela["zmienna"] == "zmienil_lige"].loc[True, "par"]),
     )
 
-    # Rozrzut wewnatrz ligi wobec roznic miedzy ligami. Jesli odchylenie w lidze
-    # jest duzo wieksze niz rozstep median, to liga sama w sobie tlumaczy malo.
+    # rozrzut wewnatrz ligi w porownaniu z roznica miedzy ligami
     ligi = tabela[tabela["zmienna"] == "liga"]
     zapisz_fakt(
         "a5_rozstep_srednich_lig",
@@ -727,7 +620,6 @@ def a5_podgrupy(model: pd.DataFrame) -> None:
     fig.suptitle("A5. Rozkład celu w podgrupach, Big 5", y=1.03)
     zapisz_figure(fig, "a5_podgrupy")
 
-    # Druga figura: premia warunkowa jako mnoznik.
     fig, os_ = plt.subplots(figsize=(7.5, 3.6))
     wybrane = tabela[tabela["zmienna"].isin(["region", "noga", "zmienil_lige"])]
     etykiety = [f"{z}: {g}" for z, g in zip(wybrane["zmienna"], wybrane.index)]
@@ -745,28 +637,10 @@ def _koszt_redundancji(
     model: pd.DataFrame, cechy: list[str], prog: float
 ) -> dict[str, float]:
     """
-    Porownuje jakosc modelu liniowego bez filtra korelacyjnego i w dwoch jego
-    wariantach.
+    R2 Ridge na kalibracji: bez filtra korelacyjnego i z filtrem w dwoch wersjach.
 
-    Uczymy na treningu, oceniamy na kalibracji, wszedzie ten sam potok i ta sama
-    siatka alf. Jedyna roznica to lista cech ciaglych podanych na wejsciu, wiec
-    cala roznica w wyniku pochodzi z filtra.
-
-    Warianty roznia sie regula wyboru cechy do usuniecia z pary:
-
-    - naiwny: zostaje cecha stojaca w parze pierwsza, czyli wczesniejsza
-      alfabetycznie. Tak dziala filtr napisany najprosciej, jak sie da;
-    - swiadomy celu: zostaje cecha silniej skorelowana ze zmienna celu, przy
-      czym pary przetwarzamy od najsilniej skorelowanej. Korelacje z celem
-      liczymy wylacznie na treningu, wiec regula nie zaglada poza niego.
-
-    Przyjmuje:
-        model - caly zbior modelowy
-        cechy - lista cech ciaglych do przefiltrowania
-        prog  - prog korelacji bezwzglednej, powyzej ktorego para idzie do odsiewu
-
-    Zwraca:
-        slownik z R2 trzech wariantow oraz liczba cech, ktore zostaja.
+    Naiwny zostawia pierwsza ceche z pary, "swiadomy celu" te silniej
+    skorelowana z celem (korelacje tylko z treningu).
     """
     from sklearn.compose import ColumnTransformer
     from sklearn.impute import SimpleImputer
@@ -788,12 +662,9 @@ def _koszt_redundancji(
         if a not in usuniete_naiwnie:
             usuniete_naiwnie.add(c)
 
-    # `corrwith` liczy korelacje kazdej kolumny z podana seria; bierzemy modul,
-    # bo interesuje nas sila zwiazku niezaleznie od kierunku.
     sila_zwiazku = trening[cechy].corrwith(trening["log_market_value"]).abs()
     usuniete_swiadomie: set[str] = set()
-    # `sort_values(ascending=False)` przetwarza pary od najsilniej skorelowanej,
-    # wiec najbardziej oczywiste duplikaty rozstrzygamy w pierwszej kolejnosci.
+    # pary od najsilniej skorelowanej
     for a, c in pary[pary > prog].sort_values(ascending=False).index:
         if a in usuniete_swiadomie or c in usuniete_swiadomie:
             continue
@@ -852,14 +723,8 @@ def _koszt_redundancji(
 
 def a6_korelacje(model: pd.DataFrame) -> None:
     """
-    Ile z cech `_p90` jest redundantnych, czyli wejscie do filtra korelacyjnego w E5.
-
-    Korelacje liczymy wylacznie na zbiorze treningowym, bo filtr w Pipeline
-    bedzie fitowany na treningu i to jego decyzje odtwarzamy tutaj.
-
-    Symulujemy dokladnie ta procedure, ktora zastosuje filtr: idziemy po parach
-    o korelacji powyzej progu i z kazdej takiej pary usuwamy druga cecha,
-    zachowujac pierwsza. Wynikiem jest liczba cech, ktore filtr usunie.
+    A6: korelacje miedzy cechami (tylko trening): ile cech usunalby filtr,
+    jak cechy grupuja sie w bloki i ile niezaleznych wymiarow daja (PCA).
     """
     print("\nA6  korelacje miedzy cechami")
     bloki = kolumny_cech(model)
@@ -867,18 +732,14 @@ def a6_korelacje(model: pd.DataFrame) -> None:
     trening = model[model["podzial"] == "trening"]
 
     macierz = trening[cechy].corr().abs()
-    # `np.triu(..., 1)` daje maske gornego trojkata bez przekatnej, czyli kazda
-    # pare cech dokladnie raz. `where` zostawia tylko te pola, `stack` splaszcza
-    # tabele do serii indeksowanej para nazw.
+    # gorny trojkat bez przekatnej = kazda para raz
     maska = np.triu(np.ones(macierz.shape, dtype=bool), 1)
     pary = macierz.where(maska).stack()
 
     for prog in PROGI_KORELACJI:
         zapisz_fakt(f"a6_par_powyzej_{prog}", int((pary > prog).sum()))
-        # Symulacja filtra: usuwamy druga cecha z kazdej pary powyzej progu.
+        # tak jak filtr: z kazdej pary powyzej progu usuwam druga ceche
         do_usuniecia: set[str] = set()
-        # Indeks serii `pary` jest dwupoziomowy, wiec kazdy jego element
-        # rozpakowuje sie na nazwy obu cech tworzacych pare.
         for a, c in pary[pary > prog].index:
             if a not in do_usuniecia:
                 do_usuniecia.add(c)
@@ -903,14 +764,9 @@ def a6_korelacje(model: pd.DataFrame) -> None:
     zapisz_fakt("a6_najsilniejsza_korelacja", round(float(tabela.iloc[0, 2]), 5))
     zapisz_fakt("a6_druga_para", f"{tabela.iloc[1, 0]} / {tabela.iloc[1, 1]}")
     zapisz_fakt("a6_druga_korelacja", round(float(tabela.iloc[1, 2]), 5))
-    # Mediana korelacji bezwzglednej mowi, jak gesta jest cala macierz.
     zapisz_fakt("a6_mediana_korelacji", round(float(pary.median()), 4))
 
-    # Ile filtr faktycznie kupuje. Model liniowy z regularyzacja grzbietowa jest
-    # tu wrazliwym probnikiem: para cech skorelowanych niemal doskonale pozwala
-    # dopasowac duze wspolczynniki o przeciwnych znakach, ktorych roznica jest
-    # na treningu prawie stala. Gdy poziom takiej cechy przesunie sie poza
-    # treningiem, blad rosnie proporcjonalnie do tych wspolczynnikow.
+    # koszt filtra na modelu Ridge (O-7)
     koszt = _koszt_redundancji(model, cechy, PROG_FILTRA_DO_POMIARU)
     for nazwa, wartosc in koszt.items():
         zapisz_fakt(f"a6_{nazwa}", wartosc)
@@ -923,40 +779,28 @@ def a6_korelacje(model: pd.DataFrame) -> None:
         f"({koszt['zysk_filtra_swiadomego']:+.4f})"
     )
 
-    # Struktura blokowa i efektywna wymiarowosc.
-    #
-    # Sama macierz korelacji 95 na 95 jest nieczytelna, wiec zadajemy jej dwa
-    # konkretne pytania. Po pierwsze: w ile grup wzajemnie zamiennych cech
-    # rozpada sie ten zestaw. Po drugie: ilu niezaleznych wymiarow te 95 kolumn
-    # naprawde dostarcza. Odpowiedz na oba pytania mowi, ile realnie mierzymy.
+    # bloki cech: grupowanie hierarchiczne z odlegloscia 1 - |r|
     from scipy.cluster import hierarchy
     from scipy.spatial.distance import squareform
 
     odleglosc = 1 - macierz.to_numpy()
-    # Macierz odleglosci musi byc dokladnie symetryczna i miec zera na przekatnej,
-    # inaczej `squareform` odmawia. Drobne bledy zaokraglen usuwamy jawnie.
+    # squareform wymaga idealnej symetrii i zer na przekatnej
     np.fill_diagonal(odleglosc, 0.0)
     odleglosc = (odleglosc + odleglosc.T) / 2
-    # `squareform` zamienia kwadratowa macierz odleglosci na wektor, ktorego
-    # oczekuje `linkage`. Metoda "average" laczy grupy po sredniej odleglosci
-    # miedzy ich elementami, wiec blok oznacza tu zbior cech wzajemnie
-    # skorelowanych, a nie lancuch par.
+    # "average": blok to cechy skorelowane srednio ze soba, a nie lancuch par
     powiazania = hierarchy.linkage(
         squareform(odleglosc, checks=False), method="average"
     )
     porzadek = hierarchy.leaves_list(powiazania)
     uporzadkowana = macierz.iloc[porzadek, porzadek]
 
-    # `fcluster` z kryterium "distance" tnie drzewo na wysokosci 1 - prog, czyli
-    # zostawia w jednym bloku cechy o sredniej korelacji bezwzglednej co najmniej
-    # rownej progowi.
+    # ciecie drzewa na wysokosci 1 - prog
     klastry = hierarchy.fcluster(
         powiazania, t=1 - PROG_BLOKU_CECH, criterion="distance"
     )
     klastry_w_porzadku = klastry[porzadek]
     nazwy_w_porzadku = [cechy[i] for i in porzadek]
 
-    # Granice blokow to miejsca, w ktorych numer klastra sie zmienia.
     granice = [
         i
         for i in range(1, len(klastry_w_porzadku))
@@ -968,8 +812,7 @@ def a6_korelacje(model: pd.DataFrame) -> None:
     opis_blokow = []
     for numer, (od_, do_) in enumerate(zip(poczatki, konce), start=1):
         czlonkowie = nazwy_w_porzadku[od_:do_]
-        # Reprezentantem bloku jest cecha najsilniej zwiazana z pozostalymi
-        # w tym samym bloku, czyli jego srodek.
+        # reprezentant = cecha najmocniej skorelowana z reszta bloku
         wewnatrz = macierz.loc[czlonkowie, czlonkowie]
         reprezentant = (
             czlonkowie[0] if len(czlonkowie) == 1 else wewnatrz.mean().idxmax()
@@ -1008,23 +851,16 @@ def a6_korelacje(model: pd.DataFrame) -> None:
         f"({tabela_blokow.loc[tabela_blokow['cech'].idxmax(), 'reprezentant']})"
     )
 
-    # Efektywna wymiarowosc. Wartosci wlasne macierzy kowariancji cech
-    # standaryzowanych mowia, ile wariancji niesie kazdy kolejny niezalezny
-    # kierunek. Liczba kierunkow potrzebnych na 80 i 90 procent wariancji jest
-    # uczciwa miara tego, ile niezaleznych pomiarow tu w ogole mamy.
+    # PCA na cechach standaryzowanych: ile skladowych daje 80% i 90% wariancji
     dane = trening[cechy]
-    # Braki uzupelniamy mediana treningu wylacznie na potrzeby tego pomiaru.
     dane = dane.fillna(dane.median())
     standaryzowane = (dane - dane.mean()) / dane.std()
-    # `eigvalsh` liczy wartosci wlasne macierzy symetrycznej i zwraca je rosnaco,
-    # wiec odwracamy kolejnosc przez [::-1].
+    # eigvalsh zwraca wartosci rosnaco, stad [::-1]
     wartosci_wlasne = np.linalg.eigvalsh(np.cov(standaryzowane.to_numpy().T))[::-1]
     skumulowana = np.cumsum(wartosci_wlasne) / wartosci_wlasne.sum()
     skladowych_80 = int((skumulowana < 0.80).sum() + 1)
     skladowych_90 = int((skumulowana < 0.90).sum() + 1)
-    # Wymiarowosc partycypacyjna: (suma wartosci wlasnych)^2 / suma kwadratow.
-    # Dla zestawu k cech idealnie nieskorelowanych wynosi k, a dla zestawu
-    # sprowadzajacego sie do jednego wymiaru spada do jednosci.
+    # wymiarowosc partycypacyjna: (suma wartosci wlasnych)^2 / suma ich kwadratow
     wymiarowosc = float(wartosci_wlasne.sum() ** 2 / np.sum(wartosci_wlasne**2))
     zapisz_fakt("a6_skladowych_na_80_proc", skladowych_80)
     zapisz_fakt("a6_skladowych_na_90_proc", skladowych_90)
@@ -1044,9 +880,7 @@ def a6_korelacje(model: pd.DataFrame) -> None:
     )
 
     obraz = osie[0].imshow(uporzadkowana, cmap="magma", vmin=0, vmax=1)
-    # Bloki obrysowujemy ramka zamiast ciac obraz liniami przez cala szerokosc.
-    # Przy 28 blokach, z ktorych polowa jest jednoelementowa, siatka linii
-    # zaciemnialaby to, co ma pokazac.
+    # ramki tylko wokol blokow od 3 cech
     etykiety_pozycje, etykiety_tekst = [], []
     for wiersz, (od_, do_) in zip(opis_blokow, zip(poczatki, konce)):
         if wiersz["cech"] < 3:
@@ -1105,26 +939,14 @@ def a6_korelacje(model: pd.DataFrame) -> None:
 
 
 def a7_mapa_brakow(model: pd.DataFrame) -> None:
-    """
-    Czy braki rozkladaja sie losowo, czy koncentruja w jednej grupie.
-
-    Pytanie ma konsekwencje dla W5: imputacja mediana w cechach, ktorych braki
-    siedza prawie wylacznie u obroncow, podstawi obroncom wartosc typowa dla
-    calej populacji i wprowadzi obciazenie grupowe.
-
-    Test chi-kwadrat sprawdza, czy udzial brakow rozni sie miedzy pozycjami
-    bardziej, niz wynikaloby to z losowego rozrzutu.
-    """
+    """A7: czy braki sa rozlozone losowo miedzy pozycjami (test chi-kwadrat)."""
     print("\nA7  mapa brakow")
     kolumny_z_brakami = [k for k in model.columns if model[k].isna().any()]
     wiersze = []
 
     for kolumna in kolumny_z_brakami:
         brak = model[kolumna].isna()
-        # `crosstab` buduje tabele licznosci pozycja x (brak / obecny).
         tabela_kontyngencji = pd.crosstab(model["pozycja"], brak)
-        # `chi2_contingency` zwraca statystyke, p-wartosc, stopnie swobody
-        # i tabele oczekiwana; interesuje nas druga pozycja.
         p_wartosc = float(stats.chi2_contingency(tabela_kontyngencji)[1])
         udzial = brak.groupby(model["pozycja"]).mean() * 100
         wiersze.append(
@@ -1191,17 +1013,9 @@ def a7_mapa_brakow(model: pd.DataFrame) -> None:
 
 def a8_prog_minut(model: pd.DataFrame) -> None:
     """
-    Jak prog minut zmienia liczebnosc, sklad i wariancje cech.
+    A8: jak prog minut zmienia liczebnosc, sklad i zmiennosc cech _p90.
 
-    Ograniczenie do odnotowania: zbior modelowy jest juz odfiltrowany progiem 225
-    (D-08), wiec warianty ponizej tej wartosci wymagalyby ponownego przebiegu
-    pipeline z innym `MIN_MINUT`. Tutaj mierzymy kierunek i sile efektu na
-    progach od 225 w gore, co wystarcza do oceny, czy prog jest parametrem
-    obojetnym dla wnioskow.
-
-    Wariancja cech `_p90` mierzona jest wspolczynnikiem zmiennosci, czyli
-    odchyleniem podzielonym przez srednia. Jest bezwymiarowy, wiec da sie go
-    usrednic po cechach o roznych jednostkach.
+    Tylko progi od 225 w gore - nizej dane sa juz odfiltrowane.
     """
     print("\nA8  wrazliwosc na prog minut")
     b = big5(model)
@@ -1210,7 +1024,7 @@ def a8_prog_minut(model: pd.DataFrame) -> None:
 
     for prog in PROGI_MINUT:
         podzbior = b[b["minuty_sezon"] >= prog]
-        # Wspolczynnik zmiennosci liczony cecha po cesze, potem mediana po cechach.
+        # wspolczynnik zmiennosci (std / srednia) dla kazdej cechy, potem mediana
         zmiennosc = (podzbior[p90].std() / podzbior[p90].mean().abs()).median()
         wiersze.append(
             {
@@ -1277,16 +1091,8 @@ def a8_prog_minut(model: pd.DataFrame) -> None:
 
 def a9_sufit_informacyjny(model: pd.DataFrame) -> None:
     """
-    Ile wariancji celu tlumaczy sam kontekst, zanim dolozymy statystyki gry.
-
-    Budujemy zagniezdzone bloki cech i po kazdym dolozeniu mierzymy R2. Rosnaca
-    roznica miedzy blokami mowi, ile wnosi kazda porcja informacji, a ostatni
-    wiersz podaje realistyczne oczekiwanie wobec modeli z E5.
-
-    Ocena idzie na zbiorze kalibracyjnym. Zbior testowy zostaje nietkniety przez
-    caly etap E3, zeby protokol z E4 mogl go uzyc jako danych naprawde
-    niewidzianych. Kalibracja ma tu role tymczasowego zbioru oceny; w E5 wroci
-    do swojej wlasciwej roli z W3.
+    A9: R2 na kalibracji po dokladaniu kolejnych blokow cech
+    (wiek, pozycja i liga, region i noga, minuty, statystyki gry).
     """
     print("\nA9  sufit informacyjny")
     from sklearn.compose import ColumnTransformer
@@ -1303,14 +1109,7 @@ def a9_sufit_informacyjny(model: pd.DataFrame) -> None:
     y_tr, y_ka = trening["log_market_value"], kalibracja["log_market_value"]
 
     def ocen(num: list[str], kat: list[str], nazwa: str, estymator=None) -> dict:
-        """
-        Uczy prosty potok na treningu i ocenia go na kalibracji.
-
-        ColumnTransformer przepuszcza kolumny liczbowe przez imputacje mediana
-        i standaryzacje, a kategoryczne przez kodowanie zerojedynkowe. Cala
-        obrobka siedzi wewnatrz Pipeline, wiec fituje sie wylacznie na treningu -
-        dokladnie tak, jak wymaga D-09.
-        """
+        """Uczy prosty Pipeline na treningu i zwraca R2 i MAE na kalibracji."""
         kroki = []
         if num:
             kroki.append(
@@ -1327,9 +1126,6 @@ def a9_sufit_informacyjny(model: pd.DataFrame) -> None:
             )
         if kat:
             kroki.append(("kategoryczne", OneHotEncoder(handle_unknown="ignore"), kat))
-        # `np.logspace(-2, 4, 25)` daje 25 wartosci alfa rozlozonych rownomiernie
-        # w skali logarytmicznej od 0,01 do 10 000; RidgeCV wybiera z nich
-        # najlepsza walidacja krzyzowa na treningu.
         est = estymator or RidgeCV(alphas=np.logspace(-2, 4, 25))
         potok = Pipeline([("przygotowanie", ColumnTransformer(kroki)), ("model", est)])
         potok.fit(trening[num + kat], y_tr)
@@ -1346,7 +1142,7 @@ def a9_sufit_informacyjny(model: pd.DataFrame) -> None:
     wszystkie_num = bloki["liczbowe"] + bloki["p90"] + bloki["procentowe"]
     wszystkie_kat = bloki["kategoryczne"]
 
-    # Mediana treningu jako punkt zerowy - odpowiednik baseline M0a z D-06.
+    # punkt zerowy: mediana treningu (jak M0a)
     mediana = float(y_tr.median())
     wiersze = [
         {
@@ -1389,7 +1185,6 @@ def a9_sufit_informacyjny(model: pd.DataFrame) -> None:
             HistGradientBoostingRegressor(random_state=0),
         )
     )
-    # Kolejnosc odwrocona: same statystyki gry, bez kontekstu i bez wolumenu.
     wiersze.append(
         ocen(
             bloki["p90"] + bloki["procentowe"], [], "same statystyki gry, bez kontekstu"
@@ -1450,20 +1245,14 @@ def a9_sufit_informacyjny(model: pd.DataFrame) -> None:
 
 def psi(odniesienie: pd.Series, porownanie: pd.Series, kosze: int = KOSZE_PSI) -> float:
     """
-    Population Stability Index miedzy dwoma rozkladami jednej cechy.
+    PSI: suma (b - a) * log(b / a) po koszach z decyli rozkladu `odniesienie`.
 
-    Kosze wyznaczamy decylami rozkladu odniesienia, potem liczymy udzialy obu
-    prob w kazdym koszu i sumujemy (udzial_b - udzial_a) * log(udzial_b / udzial_a).
-    Miara jest symetryczna wzgledem zamiany znaku roznicy i rosnie wraz
-    z rozjechaniem sie rozkladow. Konwencja: ponizej 0,1 stabilnie, 0,1-0,25
-    umiarkowanie, powyzej 0,25 duzo.
+    Ponizej 0.1 stabilnie, 0.1-0.25 umiarkowanie, powyzej 0.25 duze przesuniecie.
     """
     krawedzie = np.nanpercentile(odniesienie, np.linspace(0, 100, kosze + 1))
-    # Skrajne kosze rozciagamy do nieskonczonosci, zeby zlapac wartosci spoza
-    # zakresu proby odniesienia.
+    # skrajne kosze do nieskonczonosci, zeby zlapac wartosci spoza zakresu
     krawedzie[0], krawedzie[-1] = -np.inf, np.inf
-    # Cechy o wielu powtarzajacych sie wartosciach daja zduplikowane krawedzie,
-    # ktore `np.histogram` odrzuca. `np.unique` zostawia rosnaca, unikalna liste.
+    # przy powtarzajacych sie wartosciach krawedzie sie dubluja
     krawedzie = np.unique(krawedzie)
     if len(krawedzie) < 3:
         return float("nan")
@@ -1473,7 +1262,7 @@ def psi(odniesienie: pd.Series, porownanie: pd.Series, kosze: int = KOSZE_PSI) -
     udzial_b = (
         np.histogram(porownanie.dropna(), krawedzie)[0] / porownanie.notna().sum()
     )
-    # Pusty kosz dalby logarytm z zera, wiec podlogujemy udzialy mala stala.
+    # pusty kosz dalby log(0)
     udzial_a = np.clip(udzial_a, 1e-4, None)
     udzial_b = np.clip(udzial_b, 1e-4, None)
     return float(np.sum((udzial_b - udzial_a) * np.log(udzial_b / udzial_a)))
@@ -1481,12 +1270,8 @@ def psi(odniesienie: pd.Series, porownanie: pd.Series, kosze: int = KOSZE_PSI) -
 
 def a10_dryf_cech(model: pd.DataFrame) -> None:
     """
-    Przesuniecie rozkladow cech: test wobec zbioru C oraz trening wobec testu.
-
-    Dwa pomiary obok siebie odpowiadaja na pytanie, ktore z przesuniec jest
-    wieksze: przejscie do innej ligi czy sam uplyw czasu wewnatrz Big 5.
-    Zgodnie z D-14 dotykamy wylacznie cech zbioru C; jego zmienna celu zostaje
-    zamknieta do eksperymentu koncowego.
+    A10: przesuniecie rozkladow cech (PSI, test KS): test vs zbior C
+    i trening vs test. Ze zbioru C tylko cechy (D-14).
     """
     print("\nA10  przesuniecie rozkladow cech")
     bloki = kolumny_cech(model)
@@ -1502,9 +1287,6 @@ def a10_dryf_cech(model: pd.DataFrame) -> None:
 
     wiersze = []
     for cecha in cechy:
-        # `ks_2samp` porownuje dwa rozklady empiryczne; statystyka to najwieksza
-        # pionowa odleglosc miedzy ich dystrybuantami, wiec mierzy w tych samych
-        # jednostkach dla kazdej cechy.
         ks = stats.ks_2samp(test[cecha].dropna(), zbior_c[cecha].dropna())
         wiersze.append(
             {
@@ -1585,22 +1367,15 @@ def a10_dryf_cech(model: pd.DataFrame) -> None:
     osie[0].axhline(PSI_DUZY, color="#C44E52", linewidth=0.8)
     osie[0].axhline(PSI_UMIARKOWANY, color="#DD8452", linewidth=0.8)
 
-    # Obie osie w tej samej skali, bo przerywana przekatna sluzy do porownania
-    # jednego przesuniecia z drugim. Zakres wyznaczamy przed podpisami, bo od
-    # niego zalezy strona, po ktorej podpis sie miesci.
+    # ta sama skala na obu osiach, zeby przekatna miala sens
     zakres = (-0.02, granica + 0.06)
 
-    # Cechy o najwiekszym przesunieciu leza blisko siebie, wiec podpisy stawiane
-    # wprost na punktach nachodza na siebie. Rozsuwamy je pionowo o stala liczbe
-    # punktow typograficznych i laczymy z punktem cienka kreska; `textcoords`
-    # z wartoscia "offset points" liczy przesuniecie w jednostkach rysunku,
-    # niezaleznie od skali osi.
+    # podpisy rozsuniete w pionie, bo punkty leza blisko siebie
     do_podpisania = tabela.head(4).index.tolist() + [najwiekszy_czas]
     for numer, cecha in enumerate(do_podpisania):
         x = float(tabela.loc[cecha, "psi_trening_vs_test"])
         y = float(tabela.loc[cecha, "psi_test_vs_C"])
-        # Punkt lezacy w prawej polowie wykresu dostaje podpis po lewej stronie,
-        # inaczej tekst wyszedlby poza os i wszedl na sasiedni panel.
+        # punkty z prawej polowy podpisuje z lewej strony, zeby tekst nie wyszedl za os
         w_prawej_polowie = x > (zakres[0] + zakres[1]) / 2
         osie[0].annotate(
             cecha,
@@ -1633,16 +1408,8 @@ def a10_dryf_cech(model: pd.DataFrame) -> None:
 
 def a11_zlom_definicyjny(model: pd.DataFrame) -> None:
     """
-    Cechy, ktorych poziom skacze miedzy sezonami mocniej, niz tlumaczy to gra.
-
-    Kazda cecha dostaje srednia sezonowa, a te standaryzujemy jej wlasnym
-    odchyleniem miedzy zawodnikami. Dzieki temu skoki roznych cech sa
-    porownywalne. Cecha, ktorej srednia przesuwa sie miedzy dwoma sasiednimi
-    sezonami o ulamek odchylenia populacyjnego, zmienila najpewniej definicje
-    u dostawcy danych, bo sama gra nie zmienia sie tak szybko.
-
-    Konsekwencja jest powazna: przy podziale czasowym model uczy sie cechy
-    w jednej definicji, a ocenia w drugiej.
+    A11: skoki srednich sezonowych cech (w odchyleniach std), zeby znalezc cechy,
+    ktore mogly zmienic definicje u dostawcy danych.
     """
     print("\nA11  zlom definicyjny w zrodle")
     bloki = kolumny_cech(model)
@@ -1651,21 +1418,11 @@ def a11_zlom_definicyjny(model: pd.DataFrame) -> None:
     sezony = sorted(b["season"].unique())
 
     srednie = b.groupby("season")[cechy].mean().loc[sezony]
-    # Odchylenie miedzy zawodnikami, liczone na calym Big 5 - jednostka odniesienia.
     odchylenia = b[cechy].std()
-    # `diff()` liczy roznice miedzy kolejnymi wierszami, czyli miedzy sezonami.
     skoki = (srednie.diff() / odchylenia).abs()
 
-    # Rozrozniamy dwa ksztalty zmiany, bo maja rozne konsekwencje.
-    #
-    # Trwaly krok to roznica miedzy poziomem dwoch ostatnich a dwoch pierwszych
-    # sezonow. Taki ksztalt pasuje do zmiany definicji u dostawcy: poziom
-    # przesuwa sie raz i zostaje. Przy podziale czasowym model uczy sie wtedy
-    # cechy w jednej definicji, a ocenia w drugiej.
-    #
-    # Anomalia jednosezonowa to odchylenie sezonu 2020-2021 od sredniej jego
-    # dwoch sasiadow. Taki ksztalt pasuje do warunkow konkretnego sezonu; ten
-    # akurat rozegrano przy pustych trybunach i przy scisnietym terminarzu.
+    # trwaly krok: 2 ostatnie sezony vs 2 pierwsze (pasuje do zmiany definicji);
+    # anomalia: 2020-2021 vs sredni poziom sasiadow (pasuje do sezonu pandemii)
     okres_wczesny = [sezony[0], sezony[1]]
     okres_pozny = [sezony[-2], sezony[-1]]
     sezon_pandemiczny = "2020-2021"
@@ -1682,7 +1439,6 @@ def a11_zlom_definicyjny(model: pd.DataFrame) -> None:
         anomalia = (
             srednie.loc[sezon_pandemiczny, cecha] - srednie.loc[sasiedzi, cecha].mean()
         ) / odchylenia[cecha]
-        # Calkowita zmiana od pierwszego do ostatniego sezonu, w procentach.
         zmiana = 100 * (srednie[cecha].iloc[-1] / srednie[cecha].iloc[0] - 1)
         wiersze.append(
             {
@@ -1715,8 +1471,7 @@ def a11_zlom_definicyjny(model: pd.DataFrame) -> None:
         int((tabela["najwiekszy_skok_sd"] > 0.2).sum()),
     )
 
-    # Ile cech ma najwiekszy skok w sasiedztwie sezonu pandemicznego. `str.contains`
-    # sprawdza obecnosc napisu w kazdym wierszu kolumny tekstowej.
+    # ile cech ma najwiekszy skok obok sezonu 2020-2021
     przy_pandemii = int(tabela["miedzy_sezonami"].str.contains(sezon_pandemiczny).sum())
     zapisz_fakt("a11_cech_ze_skokiem_przy_2020_2021", przy_pandemii)
     zapisz_fakt(
@@ -1753,11 +1508,8 @@ def a11_zlom_definicyjny(model: pd.DataFrame) -> None:
         f"{int(tabela['anomalia_2020_2021_sd'].abs().gt(0.2).sum())} cech"
     )
 
-    # Dowod wprost dla najsilniejszego przypadku. Proba dryblingu ma dwa mozliwe
-    # zakonczenia - powodzenie albo odbior - wiec oba wskazniki powinny sumowac
-    # sie do stu. Sprawdzamy, czy ta tozsamosc obowiazuje w kazdym sezonie.
-    # Jesli przestaje obowiazywac od konkretnego sezonu, to dostawca dolozyl
-    # trzecia kategorie zakonczenia i zmienil tym samym znaczenie obu kolumn.
+    # drybling konczy sie powodzeniem albo odbiorem, wiec oba wskazniki powinny
+    # sumowac sie do 100 - sprawdzam to sezon po sezonie
     para = b.dropna(subset=["dribble_success_percentage", "tackled_perecentage"])
     suma = para["dribble_success_percentage"] + para["tackled_perecentage"]
     tozsamosc = pd.DataFrame(
@@ -1769,8 +1521,6 @@ def a11_zlom_definicyjny(model: pd.DataFrame) -> None:
                 ["dribble_success_percentage", "tackled_perecentage"]
             ]
             .corr()
-            # `unstack` rozklada wielopoziomowy indeks na kolumny, a potem
-            # wyciagamy jedna komorke macierzy korelacji dla kazdego sezonu.
             .unstack()["dribble_success_percentage"]["tackled_perecentage"],
         }
     )
@@ -1798,9 +1548,7 @@ def a11_zlom_definicyjny(model: pd.DataFrame) -> None:
     )
     zapisz_fakt("a11_granica_zmiany_definicji", f"{ostatni_trening} -> {pierwszy_po}")
 
-    # Trzy cechy o najwiekszym skoku plus dwie najstabilniejsze jako tlo
-    # porownawcze. Cechy kontrolne wybieramy z danych, bo intuicyjny wybor
-    # trafil na cechy, ktore same okazaly sie niestabilne.
+    # 3 cechy z najwiekszym skokiem i 2 najstabilniejsze dla porownania
     kontrolne = tabela.nsmallest(2, "najwiekszy_skok_sd").index.tolist()
     do_wykresu = tabela.head(3).index.tolist() + kontrolne
     fig, osie = plt.subplots(1, len(do_wykresu), figsize=(3 * len(do_wykresu), 3.2))
@@ -1816,26 +1564,17 @@ def a11_zlom_definicyjny(model: pd.DataFrame) -> None:
     )
     zapisz_figure(fig, "a11_zlom_definicyjny")
 
-    # Osobno: sumy surowe z pliku kontrolnego pokazuja, czy skok idzie z licznika,
-    # czy z mianownika. Liczby doklada funkcja ciekawostek.
-
 
 # --- A12  ciekawostki ---
 
 
 def a12_ciekawostki(model: pd.DataFrame, sezony: pd.DataFrame) -> None:
-    """
-    Fakty nieoczywiste: mechanika zrodla, redundancje i zaskakujace zaleznosci.
-
-    Kazdy z tych pomiarow wyszedl przy okazji innego pytania i zostaje tutaj,
-    bo zmienia sposob czytania zbioru.
-    """
+    """A12: drobne obserwacje o danych, ktore wyszly przy innych analizach."""
     print("\nA12  ciekawostki")
     b = big5(model)
     bloki = kolumny_cech(model)
 
-    # 1. Fale wycen. Transfermarkt aktualizuje wyceny zbiorowo, w kilku dniach
-    # w roku, wiec "data wyceny" jest data akcji redakcyjnej.
+    # 1. TM aktualizuje wyceny hurtowo, w kilku dniach w roku
     daty = pd.to_datetime(sezony["data_wyceny"])
     licznosc_dat = daty.dt.strftime("%Y-%m-%d").value_counts()
     zapisz_fakt("a12_unikalnych_dat_wyceny", int(licznosc_dat.size))
@@ -1851,9 +1590,7 @@ def a12_ciekawostki(model: pd.DataFrame, sezony: pd.DataFrame) -> None:
         f"{100 * licznosc_dat.head(20).sum() / len(daty):.1f}% wszystkich wycen"
     )
 
-    # 2. Para kolumn, ktora przetrwala odsiew redundancji z etapu 1. FBref
-    # obiecuje roznice miedzy dotknieciami ogolem a dotknieciami przy pilce
-    # w grze, a w danych ta roznica prawie nie istnieje.
+    # 2. total_touches i live_ball_touches sa prawie identyczne
     roznica = sezony["total_touches"] - sezony["live_ball_touches"]
     zapisz_fakt(
         "a12_touches_identycznych_proc", round(100 * float((roznica == 0).mean()), 1)
@@ -1870,12 +1607,8 @@ def a12_ciekawostki(model: pd.DataFrame, sezony: pd.DataFrame) -> None:
         f"{roznica.mean():.2f} dotkniecia na sezon"
     )
 
-    # 2b. Druga para bliznaczych kolumn, tym razem z definicji. Proba dryblingu
-    # konczy sie albo powodzeniem, albo odbiorem, wiec oba wskazniki licza to samo
-    # zdarzenie z dwoch stron i sumuja sie do stu. Zostaje niewielka reszta na
-    # przypadki trzecie, na przyklad przerwanie akcji faulem.
+    # 2b. wskazniki dryblingu sumuja sie do 100 (na calym zbiorze)
     wskazniki = model[["dribble_success_percentage", "tackled_perecentage"]].dropna()
-    # `sum(axis=1)` sumuje wzdluz wierszy, czyli dodaje obie kolumny do siebie.
     suma_wskaznikow = wskazniki.sum(axis=1)
     zapisz_fakt(
         "a12_drybling_suma_rowna_100_proc",
@@ -1897,10 +1630,8 @@ def a12_ciekawostki(model: pd.DataFrame, sezony: pd.DataFrame) -> None:
         f"(srednia sumy {suma_wskaznikow.mean():.2f})"
     )
 
-    # 3. Symetria ksiegowa danych zdarzeniowych. Kazdy udany odbior przy
-    # dryblingu jest jednoczesnie strata dla dryblujacego, wiec sumy obu kolumn
-    # musza sie zgadzac na poziomie ligi, choc na poziomie zawodnika opisuja
-    # zupelnie rozne osoby.
+    # 3. suma tackled i dribblers_tackled w lidze powinna byc taka sama
+    # (to samo zdarzenie widziane od dwoch zawodnikow)
     symetria = sezony.groupby(["liga", "season"])[
         ["tackled", "dribblers_tackled"]
     ].sum()
@@ -1922,8 +1653,7 @@ def a12_ciekawostki(model: pd.DataFrame, sezony: pd.DataFrame) -> None:
         f"{sezony['tackled'].corr(sezony['dribblers_tackled']):.3f}"
     )
 
-    # 4. Ranking korelacji cech z celem. Wolumen gry bije wszystkie statystyki
-    # jakosciowe, co jest istotne dla interpretacji rankingow SHAP w W4.
+    # 4. korelacje cech z celem
     kandydaci = (
         bloki["p90"]
         + bloki["procentowe"]
@@ -1956,8 +1686,7 @@ def a12_ciekawostki(model: pd.DataFrame, sezony: pd.DataFrame) -> None:
         f"({korelacje.drop(['minuty_sezon', 'mecze']).iloc[0]:+.3f})"
     )
 
-    # 5. Wzrost. Globalnie korelacja z wartoscia jest zerowa, a wewnatrz pozycji
-    # zmienia znak - przyklad efektu Simpsona na tym zbiorze.
+    # 5. wzrost: globalnie korelacja ~0, wewnatrz pozycji zmienia znak (Simpson)
     d = b[b["wzrost_cm"].notna()]
     zapisz_fakt(
         "a12_wzrost_korelacja_globalna",
@@ -1976,14 +1705,13 @@ def a12_ciekawostki(model: pd.DataFrame, sezony: pd.DataFrame) -> None:
         f"FOR {d[d.pozycja == 'FOR']['wzrost_cm'].corr(d[d.pozycja == 'FOR']['log_market_value']):+.3f}"
     )
 
-    # 6. Sklad osi "znani / nowi" z D-12 - liczby wchodza do protokolu w E4.
+    # 6. udzial zawodnikow znanych z treningu (D-12)
     for zbior in ["kalibracja", "test", "zbior_C"]:
         pod = model[model["podzial"] == zbior]
         zapisz_fakt(
             f"a12_udzial_znanych_{zbior}",
             round(100 * float(pod["znany_z_treningu"].mean()), 1),
         )
-    # Zawodnicy wystepujacy i w Big 5, i w Primeira Lidze.
     w_big5 = set(big5(model)["player_id"])
     w_c = set(model.loc[model["podzial"] == "zbior_C", "player_id"])
     zapisz_fakt("a12_zawodnikow_w_obu_dziedzinach", len(w_big5 & w_c))

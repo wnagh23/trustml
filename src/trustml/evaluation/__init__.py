@@ -1,10 +1,4 @@
-"""
-Protokol oceny: podzial danych, metryki i poziomy odniesienia.
-
-Moduly tego pakietu nie wiedza nic o pilce noznej. Nazwy kolumn wchodza
-parametrami, zeby ten sam kod obsluzyl przejscie na inny zbior danych - test
-takiego przejscia jest zaplanowany w E12 (D-19).
-"""
+"""Protokol oceny: podzial danych, metryki i poziomy odniesienia."""
 
 from .baselines import (
     mediana_globalna,

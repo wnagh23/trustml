@@ -1,12 +1,6 @@
 """
-Audyt archiwow ZIP z surowymi stronami FBref.
-
-master.db przychodzi bez metadanych: bez wersji, daty scrape'u i adresu
-zrodlowego. Archiwa ZIP obok bazy trzymaja surowe strony, z ktorych ja zbudowano,
-a te maja i adres kanoniczny, i date pobrania w naglowku pliku.
-
-Skrypt czyta wylacznie metadane archiwow i probke stron, zostawiajac data/raw
-w stanie nietknietym.
+Sprawdza archiwa ZIP ze stronami FBref: daty pobrania, adresy i zgodnosc
+z meczami w master.db (sama baza nie ma metadanych). Wynik: docs/zrodla_fbref.json.
 
     python scripts/audyt_zrodel.py
 """
@@ -25,36 +19,26 @@ KATALOG_ZIP = KATALOG_REPO / "data" / "raw" / "fbref"
 SCIEZKA_DB = KATALOG_ZIP / "master.db"
 WYJSCIE = KATALOG_REPO / "docs" / "zrodla_fbref.json"
 
-# Adres kanoniczny w naglowku strony - jedyne miejsce, gdzie FBref zapisuje,
-# skad pochodzi dokument.
+# adres kanoniczny z naglowka strony
 WZOR_URL = re.compile(r"<link[^>]+rel=[\"']canonical[\"'][^>]+href=[\"']([^\"']+)")
 
 
 def zbadaj_archiwum(sciezka: Path) -> dict:
-    """
-    Zbiera metadane jednego archiwum: liczbe stron, sezony i daty pobrania.
-
-    Przyjmuje:
-        sciezka - plik .zip
-
-    Zwraca:
-        slownik z podsumowaniem archiwum.
-    """
+    """Liczba stron, sezony, daty pobrania i przykladowy adres z jednego archiwum."""
     with zipfile.ZipFile(sciezka) as archiwum:
         wpisy = [w for w in archiwum.infolist() if not w.is_dir()]
 
-        # Sciezka w archiwum wyglada jak "Bundesliga/2017-2018/01024937".
+        # sciezka w archiwum: "Bundesliga/2017-2018/01024937"
         sezony: dict[str, int] = {}
         for wpis in wpisy:
             czesci = Path(wpis.filename).parts
             if len(czesci) >= 2:
                 sezony[czesci[1]] = sezony.get(czesci[1], 0) + 1
 
-        # Format ZIP zapisuje czas lokalny bez strefy - doklejenie tu UTC byloby
-        # dopisaniem informacji spoza pliku.
+        # ZIP zapisuje czas lokalny bez strefy, wiec nie doklejam UTC
         daty = [datetime(*w.date_time) for w in wpisy]  # noqa: DTZ001
 
-        # Adres bierzemy z pierwszej strony - wzorzec jest ten sam dla wszystkich.
+        # adres z pierwszej strony, wzorzec jest wszedzie ten sam
         with archiwum.open(wpisy[0].filename) as plik:
             poczatek = plik.read(200_000).decode("utf-8", errors="ignore")
         trafienie = WZOR_URL.search(poczatek)
@@ -94,7 +78,7 @@ def main() -> None:
 
     print(f"\n  lacznie stron: {len(wszystkie_id)}")
 
-    # Kontrola spojnosci: czy identyfikatory ze scrape'ow pokrywaja mecze w bazie.
+    # czy strony w archiwach pokrywaja sie z meczami w bazie
     with sqlite3.connect(
         f"file:{SCIEZKA_DB.as_posix()}?mode=ro", uri=True
     ) as polaczenie:

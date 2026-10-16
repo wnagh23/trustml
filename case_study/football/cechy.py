@@ -1,9 +1,7 @@
 """
-Przeksztalcenie danych FBref w cechy na poziomie sezonu.
-
-ETAP 3  parsowanie: wiek, narodowosc, pozycja
-ETAP 4  agregacja mecz -> zawodnik x sezon
-ETAP 5  wskazniki procentowe i normalizacja per 90 minut
+Etap 3: parsowanie wieku, narodowosci i pozycji.
+Etap 4: agregacja mecz -> zawodnik x sezon.
+Etap 5: wskazniki procentowe i normalizacja per 90 minut.
 """
 
 from __future__ import annotations
@@ -28,20 +26,7 @@ from .parametry import (
 def wybierz_najczestsza(
     ramka: pd.DataFrame, kolumna_klucza: str, kolumna_wartosci: str
 ) -> pd.Series:
-    """
-    Dla kazdego klucza wybiera wartosc najczestsza (dominanta).
-
-    Uzywane do cech stalych zawodnika, gdzie odstepstwa sa bledami zrodla.
-    Przy remisie wybiera mniejsza wartosc - wynik ma byc powtarzalny (W6).
-
-    Przyjmuje:
-        ramka            - dane z kolumna klucza i kolumna wartosci
-        kolumna_klucza   - po czym grupujemy, np. "player_id"
-        kolumna_wartosci - z czego wybieramy, np. "data_urodzenia"
-
-    Zwraca:
-        Series indeksowana kluczem, jedna wartosc na klucz.
-    """
+    """Najczestsza wartosc dla kazdego klucza; przy remisie mniejsza wartosc."""
     licznik = (
         ramka.groupby([kolumna_klucza, kolumna_wartosci]).size().reset_index(name="ile")
     )
@@ -54,18 +39,9 @@ def wybierz_najczestsza(
 
 def wylicz_daty_urodzenia(wystepy: pd.DataFrame) -> pd.Series:
     """
-    Odtwarza date urodzenia z wieku podanego na dzien meczu.
+    Odtwarza date urodzenia z wieku "lata-dni" i daty meczu.
 
-    FBref podaje wiek w formacie lata-dni ("20-261") i date meczu, co jednoznacznie
-    wyznacza date urodzenia. Liczymy z kazdego meczu osobno i bierzemy dominante,
-    bo pojedyncze mecze miewaja blad.
-
-    Przyjmuje:
-        wystepy - tabela z kolumnami player_id, age, date
-
-    Zwraca:
-        Series: player_id -> data urodzenia. Obejmuje zawodnikow, ktorzy maja
-        co najmniej jeden mecz z poprawnym wiekiem.
+    Licze z kazdego meczu i biore najczestsza date. Zwraca player_id -> data.
     """
     maska = wystepy["age"].notna()
     czastkowe = wystepy.loc[maska, ["player_id", "age", "date"]].copy()
@@ -74,8 +50,7 @@ def wylicz_daty_urodzenia(wystepy: pd.DataFrame) -> pd.Series:
     lata = czesci[0].astype(int)
     dni = czesci[1].astype(int)
 
-    # Cofamy sie o dni do ostatnich urodzin, potem o pelne lata. Odejmowanie
-    # 365 dni razy liczba lat rozjechaloby sie o lata przestepne.
+    # najpierw cofam o dni do ostatnich urodzin, potem o pelne lata (lata przestepne)
     rocznica = czastkowe["date"] - pd.to_timedelta(dni, unit="D")
     czastkowe["data_urodzenia"] = pd.to_datetime(
         {
@@ -87,7 +62,6 @@ def wylicz_daty_urodzenia(wystepy: pd.DataFrame) -> pd.Series:
     )
     czastkowe = czastkowe.dropna(subset=["data_urodzenia"])
 
-    # Ta sama data powinna wyjsc z kazdego meczu. Rozrzut oznacza blad zrodla.
     grupy = czastkowe.groupby("player_id")["data_urodzenia"]
     rozrzut = (grupy.max() - grupy.min()).dt.days
     niespojni = int((rozrzut > 0).sum())
@@ -100,15 +74,7 @@ def wylicz_daty_urodzenia(wystepy: pd.DataFrame) -> pd.Series:
 
 
 def kod_na_region(kod) -> str | None:
-    """
-    Mapuje trzyliterowy kod kraju na region.
-
-    Przyjmuje:
-        kod - np. "BRA", "POL" albo brak
-
-    Zwraca:
-        "AMERYKA_PLD", "EUROPA", "RESZTA" albo None dla braku.
-    """
+    """Kod kraju -> "AMERYKA_PLD", "EUROPA", "RESZTA" albo None."""
     if pd.isna(kod):
         return None
     if kod in KODY_AMERYKA_PLD:
@@ -119,37 +85,21 @@ def kod_na_region(kod) -> str | None:
 
 
 def etap_3_parsuj(wystepy: pd.DataFrame) -> pd.DataFrame:
-    """
-    Zamienia pola tekstowe FBref na cechy i odsiewa wiersze nieinterpretowalne.
-
-    Wiek, narodowosc i pozycja przychodza jako tekst ("20-261", "eng ENG",
-    "DM,CM"). Data urodzenia i narodowosc sa cechami stalymi zawodnika, wiec
-    brak w jednym meczu uzupelniamy z pozostalych. Pozycja zmienia sie z meczu
-    na mecz, wiec zostaje taka, jak w zrodle.
-
-    Przyjmuje:
-        wystepy - tabela z etapu 2
-
-    Zwraca:
-        te sama tabele, wezsza o odsiane wiersze i szersza o nowe kolumny.
-    """
+    """Parsuje wiek, narodowosc i pozycje; odrzuca wiersze, ktorych nie da sie uzyc."""
     print("\nETAP 3  parsowanie: wiek, narodowosc, pozycja")
 
     wystepy = wystepy.copy()
     na_wejsciu = len(wystepy)
     wystepy["date"] = pd.to_datetime(wystepy["date"])
 
-    # Minuty sa mianownikiem kazdej statystyki per 90, wiec wystep o nieznanej
-    # dlugosci skazilby wszystkie cechy zawodnika w sezonie. Czesc z nich ma
-    # start=1, czyli sprzecznosc w zrodle - dlugosc wystepu pozostaje nieznana.
+    # minuty sa mianownikiem kazdej cechy per 90
     bez_minut = wystepy["minutes"].isna()
     print(f"\n  odrzucam {bez_minut.sum()} wystepow bez zapisanych minut")
     wystepy = wystepy[~bez_minut]
 
     # --- wiek ---
     print("\n  wiek")
-    # Date urodzenia liczymy przed odsianiem sezonow i bramkarzy - to cecha
-    # metrykalna, wiec im wiecej meczow ja potwierdza, tym pewniejsza.
+    # date urodzenia licze przed filtrami sezonow, wiecej meczow = pewniejszy wynik
     daty_urodzenia = wylicz_daty_urodzenia(wystepy)
     wystepy["data_urodzenia"] = wystepy["player_id"].map(daty_urodzenia)
 
@@ -160,9 +110,7 @@ def etap_3_parsuj(wystepy: pd.DataFrame) -> pd.DataFrame:
     )
     wystepy = wystepy[~bez_daty]
 
-    # Wiek na 30 czerwca roku konczacego sezon - ten sam moment, w ktorym
-    # mierzymy wartosc rynkowa. Liczymy kalendarzowo, bez dzielenia przez 365,25:
-    # urodzony w miesiacach I-VI mial juz urodziny przed 30 czerwca.
+    # wiek na 30 czerwca roku konczacego sezon, czyli w momencie wyceny
     rok_konca = wystepy["season"].str[-4:].astype(int)
     mial_juz_urodziny = wystepy["data_urodzenia"].dt.month <= 6
     wystepy["wiek"] = (
@@ -175,7 +123,7 @@ def etap_3_parsuj(wystepy: pd.DataFrame) -> pd.DataFrame:
 
     # --- narodowosc ---
     print("\n  narodowosc")
-    # Pole nation wyglada jak "eng ENG" - bierzemy trzyliterowy kod po spacji.
+    # pole nation wyglada jak "eng ENG"
     kody_z_meczow = wystepy["nation"].str.split().str[-1]
     pomocnicza = pd.DataFrame(
         {"player_id": wystepy["player_id"], "kod": kody_z_meczow}
@@ -195,14 +143,12 @@ def etap_3_parsuj(wystepy: pd.DataFrame) -> pd.DataFrame:
     for nazwa_regionu, ile in wystepy["region"].value_counts().items():
         print(f"    {nazwa_regionu:12s} {ile:7d} ({100 * ile / len(wystepy):5.1f}%)")
 
-    # Wypisujemy kody z kosza, zeby dalo sie zweryfikowac listy UEFA i CONMEBOL.
     reszta = sorted(wystepy.loc[wystepy["region"] == "RESZTA", "kod_kraju"].unique())
     print(f"    do RESZTY trafilo {len(reszta)} kodow: {' '.join(reszta)}")
 
     # --- pozycja ---
     print("\n  pozycja")
-    # Pozycja bywa zlozona ("DM,CM") i kolejnosc ma znaczenie - FBref wymienia
-    # najpierw pozycje podstawowa, wiec "FW,AM" to napastnik, a "AM,FW" pomocnik.
+    # pierwsza pozycja jest podstawowa: "FW,AM" to napastnik, "AM,FW" pomocnik
     pierwsza = wystepy["position"].str.split(",").str[0].str.strip()
     wystepy["pozycja_mecz"] = pierwsza.map(MAPA_POZYCJI)
 
@@ -243,21 +189,12 @@ def etap_3_parsuj(wystepy: pd.DataFrame) -> pd.DataFrame:
 
 def wybierz_wg_sumy_minut(wystepy: pd.DataFrame, kolumna: str) -> pd.Series:
     """
-    Dla kazdej pary zawodnik-sezon wybiera wartosc o najwiekszej sumie minut.
+    Dla kazdej pary zawodnik-sezon wybiera wartosc z najwieksza suma minut.
 
-    Wazymy minutami: obronca, ktory 11 razy wszedl na 5 minut jako pomocnik
-    i 10 razy zagral pelne 90 w obronie, wedlug liczby meczow bylby pomocnikiem.
-    Obie reguly roznia sie dla 2,9% par.
-
-    Przyjmuje:
-        wystepy - tabela na poziomie meczu, z kolumna "minutes"
-        kolumna - co wybieramy, np. "pozycja_mecz" albo "competition"
-
-    Zwraca:
-        Series indeksowana (player_id, season).
+    Uzywane do pozycji i ligi. Zwraca Series z indeksem (player_id, season).
     """
     minuty = wystepy.groupby(KLUCZ_SEZON + [kolumna])["minutes"].sum().reset_index()
-    # Przy remisie decyduje kolejnosc alfabetyczna - zeby wynik byl powtarzalny.
+    # przy remisie decyduje kolejnosc alfabetyczna
     minuty = minuty.sort_values(
         KLUCZ_SEZON + ["minutes", kolumna], ascending=[True, True, False, True]
     )
@@ -267,24 +204,14 @@ def wybierz_wg_sumy_minut(wystepy: pd.DataFrame, kolumna: str) -> pd.Series:
 
 def etap_4_agreguj(wystepy: pd.DataFrame) -> pd.DataFrame:
     """
-    Sprowadza dane z poziomu meczu na poziom sezonu.
+    Agreguje wystepy do par (player_id, season) i odrzuca pary ponizej MIN_MINUT.
 
-    Model ocenia zawodnika za sezon, bo wartosc rynkowa odzwierciedla caloroczny
-    dorobek. Kolumny procentowe sa tu odrzucane - policzy je etap 5 z licznikow
-    i mianownikow zsumowanych na poziomie sezonu.
-
-    Przyjmuje:
-        wystepy - tabela z etapu 3
-
-    Zwraca:
-        DataFrame o kluczu (player_id, season) z surowymi sumami sezonowymi.
+    Kolumny procentowe pomijam, etap 5 liczy je z zsumowanych licznikow.
     """
     print("\nETAP 4  agregacja mecz -> zawodnik x sezon")
 
     na_wejsciu = len(wystepy)
 
-    # Statystyki do zsumowania to "cala reszta" - wszystko poza metadanymi
-    # i kolumnami procentowymi.
     licznikowe = [
         c
         for c in wystepy.columns
@@ -309,7 +236,6 @@ def etap_4_agreguj(wystepy: pd.DataFrame) -> pd.DataFrame:
         mecze_od_poczatku=("start", "sum"),
     )
 
-    # Cechy stale w obrebie pary - bierzemy pierwsza wartosc z grupy.
     stale = wystepy.groupby(KLUCZ_SEZON, as_index=False).agg(
         name=("name", "first"),
         data_urodzenia=("data_urodzenia", "first"),
@@ -324,7 +250,6 @@ def etap_4_agreguj(wystepy: pd.DataFrame) -> pd.DataFrame:
     pozycja = wybierz_wg_sumy_minut(wystepy, "pozycja_mecz").rename("pozycja")
     liga = wybierz_wg_sumy_minut(wystepy, "competition").rename("liga")
 
-    # Slad po transferze w trakcie sezonu - przyda sie przy analizie W5.
     ile_lig = wystepy.groupby(KLUCZ_SEZON)["competition"].nunique()
     zmienil = (ile_lig > 1).rename("zmienil_lige")
     print(
@@ -376,26 +301,14 @@ def etap_4_agreguj(wystepy: pd.DataFrame) -> pd.DataFrame:
 
 def policz_wskazniki_procentowe(sezony: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     """
-    Liczy wskazniki jako suma_licznikow / suma_mianownikow i tnie do [0, 100].
+    Liczy wskazniki jako suma licznikow / suma mianownikow i przycina do [0, 100].
 
-    Zerowy mianownik daje NaN i tak ma zostac - to informacja o zerowej liczbie
-    prob, czyli tresc sama w sobie. Wpisanie zera znaczyloby "probowal i zawsze
-    przegrywal", a mediany - "byl przecietny".
-
-    Przyjmuje:
-        sezony - tabela z zsumowanymi licznikami i mianownikami
-
-    Zwraca:
-        (tabela z kolumnami procentowymi, slownik przycietych wierszy)
+    Zerowy mianownik daje NaN (zero prob). Zwraca (tabela, liczba przycietych).
     """
     przyciete = {}
 
     for nazwa, (licznik, mianowniki) in WSKAZNIKI_PROCENTOWE.items():
-        # sum(axis=1) dodaje kolumny w obrebie wiersza - mianownik pojedynkow
-        # powietrznych powstaje z dwoch kolumn.
         mianownik = sezony[mianowniki].sum(axis=1)
-        # Zerowy mianownik zamieniamy na NaN przed dzieleniem, zeby wynik pozostal
-        # skonczony i wolny od ostrzezen numpy.
         sezony[nazwa] = 100 * sezony[licznik] / mianownik.where(mianownik > 0)
 
         poza = ((sezony[nazwa] < 0) | (sezony[nazwa] > 100)).sum()
@@ -407,19 +320,7 @@ def policz_wskazniki_procentowe(sezony: pd.DataFrame) -> tuple[pd.DataFrame, dic
 
 
 def etap_5_normalizuj(sezony: pd.DataFrame) -> pd.DataFrame:
-    """
-    Dolicza wskazniki procentowe i przelicza statystyki na 90 minut.
-
-    Sama suma sezonowa miesza jakosc zawodnika z liczba rozegranych minut:
-    10 goli w 3400 minut to gorszy strzelec niz 8 goli w 900 minut, a suma mowi
-    odwrotnie. Surowe sumy zostaja w tabeli jako material kontrolny.
-
-    Przyjmuje:
-        sezony - tabela z etapu 4
-
-    Zwraca:
-        te sama tabele, poszerzona o kolumny procentowe i _p90.
-    """
+    """Dodaje wskazniki procentowe i kolumny _p90 (suma sezonowa / (minuty / 90))."""
     print("\nETAP 5  wskazniki procentowe i normalizacja per 90 minut")
 
     sezony = sezony.copy()
@@ -439,16 +340,13 @@ def etap_5_normalizuj(sezony: pd.DataFrame) -> pd.DataFrame:
     else:
         print("\n  przycinanie do [0,100]: wszystkie wartosci w zakresie")
 
-    # Ile "pelnych meczow" rozegral zawodnik. Prog minutowy z etapu 4 gwarantuje,
-    # ze mianownik jest dodatni.
     mecze_po_90 = sezony["minuty_sezon"] / 90
     licznikowe = [
         c
         for c in sezony.columns
         if c not in KOLUMNY_NIELICZNIKOWE and c not in WSKAZNIKI_PROCENTOWE
     ]
-    # Budujemy wszystkie kolumny naraz - dokladanie ich po jednej kopiowaloby
-    # cala tabele przy kazdym przypisaniu.
+    # wszystkie kolumny naraz - dokladanie po jednej jest bardzo wolne w pandas
     p90 = pd.DataFrame(
         {f"{kolumna}_p90": sezony[kolumna] / mecze_po_90 for kolumna in licznikowe},
         index=sezony.index,

@@ -1,19 +1,10 @@
 """
-Uruchomienie pelnej analizy eksploracyjnej (etap E3).
+Uruchamia cala analize eksploracyjna (etap E3).
 
     python -m case_study.football.uruchom_eda
 
-albo po prostu przyciskiem uruchamiania w edytorze - blok startowy nizej
-dokleja korzen repozytorium do sciezki importow, wiec oba sposoby dzialaja.
-
-Skrypt przechodzi po kolei przez wszystkie pytania z listy E3 w `04-plan.md`,
-zapisuje figury do `reports/figures/eda/`, tabele do `reports/tables/eda/`
-i zrzuca komplet zmierzonych liczb do `reports/tables/eda/fakty.json`.
-
-Ten ostatni plik jest tu najwazniejszy: raport `docs/05-eda.md` cytuje liczby
-wylacznie stad, wiec kazde zdanie raportu da sie sprawdzic przez porownanie
-z zawartoscia JSON-a. Przebieg trwa okolo minuty i czyta wylacznie
-`data/processed/`, wiec nie wymaga danych surowych.
+Czyta tylko data/processed/. Zapisuje figury do reports/figures/eda/, tabele
+do reports/tables/eda/ i wszystkie liczby do reports/tables/eda/fakty.json.
 """
 
 from __future__ import annotations
@@ -49,9 +40,6 @@ def main() -> None:
     for zbior, liczba in model["podzial"].value_counts().items():
         eda.zapisz_fakt(f"wierszy_{zbior}", int(liczba))
 
-    # Kolejnosc odpowiada kolejnosci pytan w planie E3. Kazda funkcja jest
-    # niezalezna od pozostalych, wiec dowolna z nich da sie uruchomic osobno
-    # w konsoli przy diagnozowaniu.
     eda.a1_rozklad_celu(model)
     eda.a2_deflacja(model)
     eda.a3_krzywa_wieku(model)
@@ -66,9 +54,7 @@ def main() -> None:
     eda.a12_ciekawostki(model, sezony)
 
     sciezka_faktow = eda.KATALOG_TABEL / "fakty.json"
-    # `sort_keys=True` daje stabilna kolejnosc kluczy, wiec kolejne przebiegi
-    # roznia sie w gicie wylacznie tam, gdzie zmienily sie liczby.
-    # `ensure_ascii=False` zostawia polskie znaki w postaci czytelnej.
+    # sort_keys, zeby diff w gicie pokazywal tylko zmienione liczby
     sciezka_faktow.write_text(
         json.dumps(eda.FAKTY, indent=2, sort_keys=True, ensure_ascii=False),
         encoding="utf-8",
